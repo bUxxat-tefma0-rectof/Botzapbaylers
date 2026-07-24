@@ -9,6 +9,29 @@ const payment = new Payment(client);
 
 async function generatePix(amount, description = 'Recarga Doguinha Store') {
     try {
+        // Verificar modo PIX
+        const pixMode = await getSetting('pix_mode', 'automatico');
+
+        if (pixMode === 'manual') {
+            // PIX MANUAL - Retorna chave fixa
+            const pixKey = await getSetting('pix_manual_key', '');
+            const holderName = await getSetting('pix_manual_name', 'DOGUINHA STORE');
+            
+            return {
+                id: `MANUAL-${Date.now()}`,
+                qr_code: pixKey,
+                qr_code_base64: '',
+                pix_code: pixKey,
+                amount: amount,
+                status: 'pending',
+                expiration_date: addMinutes(parseInt(await getSetting('pix_expiration', '15'))),
+                created_at: new Date(),
+                is_manual: true,
+                holder_name: holderName
+            };
+        }
+
+        // PIX AUTOMÁTICO - Mercado Pago
         const expirationMinutes = parseInt(await getSetting('pix_expiration', '15'));
         const expirationDate = addMinutes(expirationMinutes);
 
@@ -34,7 +57,8 @@ async function generatePix(amount, description = 'Recarga Doguinha Store') {
             amount: amount,
             status: response.status,
             expiration_date: expirationDate,
-            created_at: new Date()
+            created_at: new Date(),
+            is_manual: false
         };
     } catch (error) {
         logger.error('❌ Erro ao gerar PIX:', error);
@@ -44,6 +68,19 @@ async function generatePix(amount, description = 'Recarga Doguinha Store') {
 
 async function checkPaymentStatus(paymentId) {
     try {
+        // Se for manual, não verifica
+        if (paymentId.startsWith('MANUAL-')) {
+            return {
+                id: paymentId,
+                status: 'pending',
+                approved: false,
+                rejected: false,
+                pending: true,
+                expired: false,
+                is_manual: true
+            };
+        }
+
         const response = await payment.get({ id: paymentId });
         return {
             id: response.id.toString(),
@@ -51,7 +88,8 @@ async function checkPaymentStatus(paymentId) {
             approved: response.status === 'approved',
             rejected: response.status === 'rejected',
             pending: response.status === 'pending',
-            expired: response.status === 'cancelled'
+            expired: response.status === 'cancelled',
+            is_manual: false
         };
     } catch (error) {
         logger.error('❌ Erro ao verificar status:', error);
@@ -63,6 +101,10 @@ async function processWebhook(body) {
     try {
         if (body.type === 'payment') {
             const paymentId = body.data.id;
+            
+            // Ignorar pagamentos manuais
+            if (paymentId.startsWith('MANUAL-')) return;
+            
             logger.info(`🔄 Webhook recebido: ${paymentId}`);
             const status = await checkPaymentStatus(paymentId);
             if (status.approved) {
@@ -77,6 +119,8 @@ async function processWebhook(body) {
 
 async function generateQrCodeImage(qrCodeBase64) {
     try {
+        if (!qrCodeBase64) return null;
+        
         const QRCode = require('qrcode');
         const fs = require('fs');
         const path = require('path');
@@ -87,7 +131,7 @@ async function generateQrCodeImage(qrCodeBase64) {
         return qrImagePath;
     } catch (error) {
         logger.error('❌ Erro ao gerar QR Code:', error);
-        throw error;
+        return null;
     }
 }
 
