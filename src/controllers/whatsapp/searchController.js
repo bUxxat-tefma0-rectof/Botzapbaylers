@@ -12,7 +12,6 @@ async function handleSearchService(phone, user) {
 
         await sendTextMessage(phone, message);
 
-        // Aguardar resposta
         global.waitingFor = global.waitingFor || {};
         global.waitingFor[phone] = 'search_service_query';
 
@@ -27,27 +26,31 @@ async function processSearchQuery(phone, user, query) {
         const products = Product.findByPlatform(platform);
 
         if (products.length === 0) {
-            await sendTextMessage(phone, `❌ Nenhum serviço encontrado para: ${platform}`);
+            const { showMainMenu } = require('./menuController');
+            await sendTextMessage(phone, `❌ Nenhum serviço encontrado para: *${platform}*\n\nTente outro nome.`);
+            await showMainMenu(phone, user);
             return;
         }
 
-        // Buscar imagem da plataforma
         const db = require('../../database/connection').getDatabase();
         const serviceImage = db.prepare('SELECT image_url FROM service_images WHERE platform = ?').get(platform);
 
         let message = `🔍 *RESULTADOS PARA: ${platform}*\n\n`;
 
-        for (const product of products) {
-            if (product.stock > 0 && product.is_active) {
-                message += `📌 *${product.name}*\n`;
-                message += `💰 Valor: R$ ${parseFloat(product.value).toFixed(2)}\n`;
-                message += `📦 Estoque: ${product.stock}\n`;
-                message += `📝 ${product.description || ''}\n`;
-                message += `━━━━━━━━━━━━━━\n`;
-            }
+        const availableProducts = products.filter(p => p.stock > 0 && p.is_active);
+
+        for (const product of availableProducts) {
+            message += `📌 *${product.name}*\n`;
+            message += `💰 Valor: R$ ${parseFloat(product.value).toFixed(2)}\n`;
+            message += `📦 Estoque: ${product.stock}\n`;
+            if (product.description) message += `📝 ${product.description}\n`;
+            message += `━━━━━━━━━━━━━━\n`;
         }
 
-        // Enviar imagem se existir
+        if (availableProducts.length === 0) {
+            message += `\n⚠️ Todos os serviços desta plataforma estão esgotados no momento.`;
+        }
+
         if (serviceImage && serviceImage.image_url) {
             try {
                 await sendImageMessage(phone, serviceImage.image_url, message);
@@ -58,12 +61,12 @@ async function processSearchQuery(phone, user, query) {
             await sendTextMessage(phone, message);
         }
 
-        // Botão de comprar ou voltar
         const buttons = getBackButton();
-        await sendButtonMessage(phone, '\nDeseja voltar ao menu?', buttons);
+        await sendButtonMessage(phone, 'Deseja voltar ao menu principal?', buttons);
 
     } catch (error) {
         logger.error('❌ Erro ao processar pesquisa:', error);
+        await sendTextMessage(phone, '❌ Erro ao pesquisar. Tente novamente.');
     }
 }
 
