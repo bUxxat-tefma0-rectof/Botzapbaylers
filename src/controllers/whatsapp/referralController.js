@@ -18,7 +18,13 @@ async function handleReferralMenu(phone, user) {
             bonus_percentage: bonusPercentage
         });
 
-        const buttons = getReferralButtons();
+        const buttons = [
+            { id: 'check_points', text: '⭐ VER PONTOS' },
+            { id: 'convert_points', text: '💰 CONVERTER EM SALDO' },
+            { id: 'text_model', text: '📋 TEXTO MODELO' },
+            { id: 'main_menu', text: '🏠 MENU INICIAL' }
+        ];
+
         await sendButtonMessage(phone, message, buttons);
     } catch (error) {
         logger.error('❌ Erro no menu de indicação:', error);
@@ -61,12 +67,11 @@ async function processReferralCode(phone, code, user) {
         const db = require('../../database/connection').getDatabase();
         db.prepare('UPDATE users SET referred_by = ? WHERE phone = ?').run(referrer.phone, phone);
 
-        await sendTextMessage(phone, `✅ Indicação registrada com sucesso!`);
+        await sendTextMessage(phone, '✅ Indicação registrada com sucesso!');
 
         const { sendTextMessage: sendMsg } = require('../../services/whatsapp');
         await sendMsg(referrer.phone, `🎉 NOVA INDICAÇÃO!\n\n${phone} se cadastrou com seu código!`);
 
-        // Bônus de registro
         const registrationBonus = parseFloat(await getSetting('registration_bonus', '0'));
         if (registrationBonus > 0) {
             User.updateBalance(phone, registrationBonus);
