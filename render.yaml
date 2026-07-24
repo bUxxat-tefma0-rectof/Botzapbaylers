@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: doguinha-store
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: TELEGRAM_ADMIN_TOKEN
+        sync: false
+      - key: WHATSAPP_NUMBER
+        sync: false
+      - key: MERCADOPAGO_ACCESS_TOKEN
+        sync: false
+      - key: OWNER_NUMBER
+        sync: false
+      - key: PORT
+        value: "3000"
+      - key: DATABASE_PATH
+        value: ./src/database/doguinha_store.db
+      - key: NODE_ENV
+        value: production
+    autoDeploy: true
