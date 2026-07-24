@@ -25,9 +25,7 @@ async function handlePaymentMenu(phone, user, selectedValue = null) {
                     await showPaymentMenu(phone, user);
                     return;
             }
-            if (amount > 0) {
-                await processPixPayment(phone, user, amount);
-            }
+            if (amount > 0) await processPixPayment(phone, user, amount);
         } else {
             await showPaymentMenu(phone, user);
         }
@@ -70,25 +68,48 @@ async function processPixPayment(phone, user, amount) {
         await sendTextMessage(phone, getMessage('generating_pix'));
 
         const pixData = await generatePix(amount);
-        const qrImagePath = await generateQrCodeImage(pixData.qr_code_base64);
 
         Transaction.create(
             pixData.id, phone, 'deposit', amount,
             pixData.pix_code, pixData.qr_code_base64, pixData.expiration_date
         );
 
-        const pixMessage = processMessageVariables('pix_qrcode', {
-            ...user,
-            transaction_id: pixData.id,
-            amount: parseFloat(amount).toFixed(2),
-            expiration_date: formatDateTime(pixData.expiration_date),
-            expiration: await getSetting('pix_expiration', '15')
-        });
+        if (pixData.is_manual) {
+            // PIX MANUAL - Mostrar chave fixa
+            const manualMessage = `*💰 ADICIONAR SALDO - PIX MANUAL 💠*\n\n` +
+                `⚠️ Você está prestes a adicionar saldo!\n\n` +
+                `Faça a transferência PIX para a chave abaixo:\n\n` +
+                `*🔑 CHAVE PIX:*\n\`\`\`${pixData.pix_code}\`\`\`\n\n` +
+                `*👤 Titular:* ${pixData.holder_name}\n` +
+                `*💰 Valor:* R$ ${parseFloat(amount).toFixed(2)}\n` +
+                `*🆔 ID:* ${pixData.id}\n` +
+                `*📅 Vencimento:* ${formatDateTime(pixData.expiration_date)}\n\n` +
+                `⚠️ Após o pagamento, envie o comprovante para o suporte!\n` +
+                `O saldo será creditado em até 24 horas.\n\n` +
+                `*⚠️ ADICIONE APENAS O QUE FOR USAR!*\n_Não realizamos reembolsos._`;
 
-        await sendImageMessage(phone, qrImagePath, pixMessage);
-        await sendTextMessage(phone, `*🔑 CÓDIGO PIX:*\n\n\`\`\`${pixData.pix_code}\`\`\`\n\n⚠️ Expira em ${await getSetting('pix_expiration', '15')} minutos.`);
+            await sendTextMessage(phone, manualMessage);
+            logger.info(`✅ PIX MANUAL gerado para ${phone}: R$ ${amount}`);
+        } else {
+            // PIX AUTOMÁTICO - QR Code
+            const qrImagePath = await generateQrCodeImage(pixData.qr_code_base64);
 
-        logger.info(`✅ PIX gerado para ${phone}: R$ ${amount}`);
+            const pixMessage = processMessageVariables('pix_qrcode', {
+                ...user,
+                transaction_id: pixData.id,
+                amount: parseFloat(amount).toFixed(2),
+                expiration_date: formatDateTime(pixData.expiration_date),
+                expiration: await getSetting('pix_expiration', '15')
+            });
+
+            if (qrImagePath) {
+                await sendImageMessage(phone, qrImagePath, pixMessage);
+            }
+
+            await sendTextMessage(phone, `*🔑 CÓDIGO PIX:*\n\n\`\`\`${pixData.pix_code}\`\`\`\n\n⚠️ Expira em ${await getSetting('pix_expiration', '15')} minutos.`);
+            logger.info(`✅ PIX gerado para ${phone}: R$ ${amount}`);
+        }
+
     } catch (error) {
         logger.error('❌ Erro ao processar PIX:', error);
         await sendTextMessage(phone, '❌ Erro ao gerar PIX! Tente novamente.');
