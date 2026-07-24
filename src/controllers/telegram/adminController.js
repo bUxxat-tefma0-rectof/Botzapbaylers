@@ -70,6 +70,7 @@ async function showMainMenu(chatId, user) {
 
     const totalGiftCards = db.prepare('SELECT COUNT(*) as total FROM giftcards').get().total;
     const totalGiftCardsValue = db.prepare('SELECT SUM(amount) as total FROM giftcards').get().total || 0;
+    const pixMode = await getSetting('pix_mode', 'automatico');
     const referralLink = `https://t.me/DoguinhaStoreBot?start=${user.referral_code || ''}`;
     const referralCount = user.total_referrals || 0;
     const referralPoints = user.referral_points || 0;
@@ -77,7 +78,8 @@ async function showMainMenu(chatId, user) {
     const message = `🤖 *DOGUINHA STORE ADMIN*\n\n` +
         `🛒 Compras hoje: ${purchasesCount}\n` +
         `🎁 GiftCards: ${totalGiftCards} (R$ ${parseFloat(totalGiftCardsValue).toFixed(2)})\n` +
-        `👑 VIP: ${vipStatus}\n\n` +
+        `👑 VIP: ${vipStatus}\n` +
+        `💠 PIX: ${pixMode === 'manual' ? '🔴 Manual' : '🟢 Automático'}\n\n` +
         `💼 *Afiliados*\n` +
         `🔗 Link: ${referralLink}\n` +
         `👥 Afiliados: ${referralCount}\n` +
@@ -177,6 +179,25 @@ async function handleMenuNavigation(chatId, text, telegramId) {
         case '✅ DESBLOQUEAR USUÁRIO':
             adminStates[chatId] = { action: 'unblock_user' };
             await sendMessage(chatId, '✅ Envie o número para desbloquear:');
+            break;
+        // PIX Manual/Automático
+        case '🔄 PIX MANUAL':
+            await updateSetting('pix_mode', 'manual');
+            await sendMessage(chatId, '✅ Modo PIX MANUAL ativado!\n\nConfigure a chave PIX abaixo.');
+            adminStates[chatId] = { action: 'change_pix_manual_key' };
+            await sendMessage(chatId, '🔑 Envie a chave PIX manual:');
+            break;
+        case '🤖 PIX AUTOMÁTICO':
+            await updateSetting('pix_mode', 'automatico');
+            await sendMessage(chatId, '✅ Modo PIX AUTOMÁTICO ativado!');
+            break;
+        case '🔑 MUDAR CHAVE PIX MANUAL':
+            adminStates[chatId] = { action: 'change_pix_manual_key' };
+            await sendMessage(chatId, '🔑 Envie a nova chave PIX:');
+            break;
+        case '👤 MUDAR NOME TITULAR PIX':
+            adminStates[chatId] = { action: 'change_pix_manual_name' };
+            await sendMessage(chatId, '👤 Envie o nome do titular:');
             break;
         case '📞 MUDAR SUPORTE':
             adminStates[chatId] = { action: 'change_support' };
@@ -332,19 +353,13 @@ async function handleStateInput(chatId, text, telegramId) {
         case 'change_log_dest': await updateSetting('log_destination', text); await sendMessage(chatId, '✅ Log destino atualizado!'); break;
         case 'add_admin':
             const newAdmin = User.findByPhone(text);
-            if (newAdmin) {
-                const db = require('../../database/connection').getDatabase();
-                db.prepare('UPDATE users SET is_admin = 1 WHERE phone = ?').run(text);
-                await sendMessage(chatId, `✅ ${text} agora é admin!`);
-            } else await sendMessage(chatId, '❌ Usuário não encontrado!');
+            if (newAdmin) { const db = require('../../database/connection').getDatabase(); db.prepare('UPDATE users SET is_admin = 1 WHERE phone = ?').run(text); await sendMessage(chatId, `✅ ${text} agora é admin!`); }
+            else await sendMessage(chatId, '❌ Usuário não encontrado!');
             break;
         case 'remove_admin':
             const admin = User.findByPhone(text);
-            if (admin && !admin.is_owner) {
-                const db = require('../../database/connection').getDatabase();
-                db.prepare('UPDATE users SET is_admin = 0 WHERE phone = ?').run(text);
-                await sendMessage(chatId, `✅ ${text} removido!`);
-            } else await sendMessage(chatId, '❌ Não é possível remover!');
+            if (admin && !admin.is_owner) { const db = require('../../database/connection').getDatabase(); db.prepare('UPDATE users SET is_admin = 0 WHERE phone = ?').run(text); await sendMessage(chatId, `✅ ${text} removido!`); }
+            else await sendMessage(chatId, '❌ Não é possível remover!');
             break;
         case 'edit_user_balance':
             const editParts = text.split('===');
@@ -352,31 +367,22 @@ async function handleStateInput(chatId, text, telegramId) {
                 const editPhone = editParts[0].trim();
                 const editAmount = parseFloat(editParts[1].replace(',', '.'));
                 const editUser = User.findByPhone(editPhone);
-                if (editUser && !isNaN(editAmount)) {
-                    User.updateBalance(editPhone, editAmount);
-                    const updated = User.findByPhone(editPhone);
-                    await sendMessage(chatId, `✅ Saldo de ${editPhone} atualizado!\n💰 Saldo atual: R$ ${parseFloat(updated.balance).toFixed(2)}`);
-                } else await sendMessage(chatId, '❌ Usuário não encontrado ou valor inválido!');
+                if (editUser && !isNaN(editAmount)) { User.updateBalance(editPhone, editAmount); const updated = User.findByPhone(editPhone); await sendMessage(chatId, `✅ Saldo atualizado!\n💰 Saldo: R$ ${parseFloat(updated.balance).toFixed(2)}`); }
+                else await sendMessage(chatId, '❌ Usuário não encontrado ou valor inválido!');
             } else await sendMessage(chatId, '❌ Formato inválido! Use: NUMERO===VALOR');
             break;
         case 'block_user':
             const blockUser = User.findByPhone(text.trim());
-            if (blockUser) {
-                const dbBlock = require('../../database/connection').getDatabase();
-                dbBlock.prepare('UPDATE users SET is_blocked = 1 WHERE phone = ?').run(text.trim());
-                try { const { sendTextMessage } = require('../../services/whatsapp'); await sendTextMessage(text.trim(), '⛔ Você foi bloqueado!'); } catch (e) {}
-                await sendMessage(chatId, `✅ ${text.trim()} bloqueado!`);
-            } else await sendMessage(chatId, '❌ Usuário não encontrado!');
+            if (blockUser) { const dbBlock = require('../../database/connection').getDatabase(); dbBlock.prepare('UPDATE users SET is_blocked = 1 WHERE phone = ?').run(text.trim()); try { const { sendTextMessage } = require('../../services/whatsapp'); await sendTextMessage(text.trim(), '⛔ Você foi bloqueado!'); } catch (e) {} await sendMessage(chatId, `✅ ${text.trim()} bloqueado!`); }
+            else await sendMessage(chatId, '❌ Usuário não encontrado!');
             break;
         case 'unblock_user':
             const unblockUser = User.findByPhone(text.trim());
-            if (unblockUser) {
-                const dbUnblock = require('../../database/connection').getDatabase();
-                dbUnblock.prepare('UPDATE users SET is_blocked = 0 WHERE phone = ?').run(text.trim());
-                try { const { sendTextMessage } = require('../../services/whatsapp'); await sendTextMessage(text.trim(), '✅ Você foi desbloqueado!'); } catch (e) {}
-                await sendMessage(chatId, `✅ ${text.trim()} desbloqueado!`);
-            } else await sendMessage(chatId, '❌ Usuário não encontrado!');
+            if (unblockUser) { const dbUnblock = require('../../database/connection').getDatabase(); dbUnblock.prepare('UPDATE users SET is_blocked = 0 WHERE phone = ?').run(text.trim()); try { const { sendTextMessage } = require('../../services/whatsapp'); await sendTextMessage(text.trim(), '✅ Você foi desbloqueado!'); } catch (e) {} await sendMessage(chatId, `✅ ${text.trim()} desbloqueado!`); }
+            else await sendMessage(chatId, '❌ Usuário não encontrado!');
             break;
+        case 'change_pix_manual_key': await updateSetting('pix_manual_key', text); await sendMessage(chatId, '✅ Chave PIX manual atualizada!'); break;
+        case 'change_pix_manual_name': await updateSetting('pix_manual_name', text); await sendMessage(chatId, '✅ Nome do titular atualizado!'); break;
         case 'change_ref_points': await updateSetting('referral_points_per_recharge', text); await sendMessage(chatId, '✅ Pontos atualizados!'); break;
         case 'change_ref_min_points': await updateSetting('referral_min_points', text); await sendMessage(chatId, '✅ Pontos mínimos atualizados!'); break;
         case 'change_ref_multiplier': await updateSetting('referral_multiplier', text); await sendMessage(chatId, '✅ Multiplicador atualizado!'); break;
@@ -390,98 +396,33 @@ async function handleStateInput(chatId, text, telegramId) {
         case 'broadcast':
             const users = User.findActiveUsers();
             let sent = 0;
-            for (const u of users) {
-                try { const { sendTextMessage } = require('../../services/whatsapp'); await sendTextMessage(u.phone, `📢 *COMUNICADO:*\n\n${text}`); sent++; } catch (e) {}
-            }
+            for (const u of users) { try { const { sendTextMessage } = require('../../services/whatsapp'); await sendTextMessage(u.phone, `📢 *COMUNICADO:*\n\n${text}`); sent++; } catch (e) {} }
             await sendMessage(chatId, `📢 Enviado para ${sent} usuários!`);
             break;
         case 'search_user':
             const foundUser = User.findByPhone(text);
-            if (foundUser) {
-                const msg = `👤 *USUÁRIO*\n\n📞 ${foundUser.phone}\n💰 Saldo: R$ ${parseFloat(foundUser.balance).toFixed(2)}\n⭐ Pontos: ${foundUser.referral_points}\n👥 Indicados: ${foundUser.total_referrals}\n🚫 Bloqueado: ${foundUser.is_blocked ? 'Sim' : 'Não'}`;
-                await sendMessage(chatId, msg);
-            } else await sendMessage(chatId, '❌ Não encontrado!');
+            if (foundUser) { const msg = `👤 *USUÁRIO*\n\n📞 ${foundUser.phone}\n💰 Saldo: R$ ${parseFloat(foundUser.balance).toFixed(2)}\n⭐ Pontos: ${foundUser.referral_points}\n👥 Indicados: ${foundUser.total_referrals}\n🚫 Bloqueado: ${foundUser.is_blocked ? 'Sim' : 'Não'}`; await sendMessage(chatId, msg); }
+            else await sendMessage(chatId, '❌ Não encontrado!');
             break;
         case 'add_logins':
-            const lines = text.split('\n');
-            let added = 0;
-            for (const line of lines) {
-                const parts = line.split('===');
-                if (parts.length >= 6) { Product.create(parts[0], parseFloat(parts[1]), parts[2], parts[3], parts[4], parts[5], parts[0], 1); added++; }
-            }
+            const lines = text.split('\n'); let added = 0;
+            for (const line of lines) { const parts = line.split('==='); if (parts.length >= 6) { Product.create(parts[0], parseFloat(parts[1]), parts[2], parts[3], parts[4], parts[5], parts[0], 1); added++; } }
             await sendMessage(chatId, `✅ ${added} logins adicionados!`);
             break;
-        case 'remove_login':
-            const removeParts = text.split('===');
-            if (removeParts.length >= 2) { Product.deleteByEmailPlatform(removeParts[1], removeParts[0]); await sendMessage(chatId, '✅ Login removido!'); }
-            break;
+        case 'remove_login': const removeParts = text.split('==='); if (removeParts.length >= 2) { Product.deleteByEmailPlatform(removeParts[1], removeParts[0]); await sendMessage(chatId, '✅ Login removido!'); } break;
         case 'remove_by_platform': Product.deleteByPlatform(text); await sendMessage(chatId, `✅ Plataforma ${text} removida!`); break;
-        case 'change_service_value':
-            const valueParts = text.split('===');
-            if (valueParts.length >= 2) {
-                const db = require('../../database/connection').getDatabase();
-                db.prepare('UPDATE products SET value = ? WHERE platform = ?').run(valueParts[1], valueParts[0]);
-                await sendMessage(chatId, '✅ Valor atualizado!');
-            }
-            break;
+        case 'change_service_value': const valueParts = text.split('==='); if (valueParts.length >= 2) { const db = require('../../database/connection').getDatabase(); db.prepare('UPDATE products SET value = ? WHERE platform = ?').run(valueParts[1], valueParts[0]); await sendMessage(chatId, '✅ Valor atualizado!'); } break;
         case 'change_all_values': Product.updateAllValues(parseFloat(text)); await sendMessage(chatId, '✅ Todos valores atualizados!'); break;
-        case 'add_service_image':
-            const imgParts = text.split('===');
-            if (imgParts.length >= 2) {
-                const db = require('../../database/connection').getDatabase();
-                db.prepare('INSERT INTO service_images (platform, image_url) VALUES (?, ?)').run(imgParts[0], imgParts[1]);
-                await sendMessage(chatId, '✅ Imagem adicionada!');
-            }
-            break;
-        case 'remove_service_image':
-            const dbImg = require('../../database/connection').getDatabase();
-            dbImg.prepare('DELETE FROM service_images WHERE platform = ?').run(text);
-            await sendMessage(chatId, '✅ Imagem removida!');
-            break;
-        case 'search_service_admin':
-            const products = Product.findByPlatform(text.toUpperCase());
-            if (products.length > 0) {
-                let resultMsg = `🔍 *${text.toUpperCase()}*\n\n`;
-                for (const p of products) resultMsg += `📌 ${p.name} - R$ ${parseFloat(p.value).toFixed(2)} - Estoque: ${p.stock}\n`;
-                await sendMessage(chatId, resultMsg);
-            } else await sendMessage(chatId, '❌ Nenhum serviço encontrado!');
-            break;
-        case 'create_giftcard':
-            const giftAmount = parseFloat(text);
-            if (isNaN(giftAmount) || giftAmount <= 0) { await sendMessage(chatId, '❌ Valor inválido!'); }
-            else {
-                const giftCode = `GIFT-ADM-${Date.now().toString(36).toUpperCase()}`;
-                const dbGift = require('../../database/connection').getDatabase();
-                dbGift.run(`CREATE TABLE IF NOT EXISTS giftcards (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE NOT NULL, amount DECIMAL(10,2) NOT NULL, buyer_phone TEXT, redeemer_phone TEXT, is_redeemed BOOLEAN DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, redeemed_at DATETIME)`);
-                dbGift.prepare('INSERT INTO giftcards (code, amount, buyer_phone) VALUES (?, ?, ?)').run(giftCode, giftAmount, 'ADMIN');
-                await sendMessage(chatId, `✅ Gift Card criado!\n\n🎁 Código: *${giftCode}*\n💰 Valor: R$ ${giftAmount.toFixed(2)}`);
-            }
-            break;
-        case 'admin_activate_vip':
-            const vipUser = User.findByPhone(text);
-            if (vipUser) {
-                const dbVip = require('../../database/connection').getDatabase();
-                dbVip.run(`CREATE TABLE IF NOT EXISTS vips (id INTEGER PRIMARY KEY AUTOINCREMENT, user_phone TEXT UNIQUE, is_vip BOOLEAN DEFAULT 0, plan_type TEXT DEFAULT 'mensal', price DECIMAL(10,2) DEFAULT 0, start_date DATETIME DEFAULT CURRENT_TIMESTAMP, expiration_date DATETIME, is_active BOOLEAN DEFAULT 1)`);
-                const expDate = new Date(); expDate.setDate(expDate.getDate() + 30);
-                const existingVip = dbVip.prepare('SELECT * FROM vips WHERE user_phone = ?').get(text);
-                if (existingVip) dbVip.prepare('UPDATE vips SET is_vip = 1, is_active = 1, expiration_date = ? WHERE user_phone = ?').run(expDate.toISOString(), text);
-                else dbVip.prepare('INSERT INTO vips (user_phone, is_vip, plan_type, price, expiration_date) VALUES (?, 1, ?, 0, ?)').run(text, 'Admin', expDate.toISOString());
-                await sendMessage(chatId, `✅ VIP ativado para ${text}!`);
-            } else await sendMessage(chatId, '❌ Usuário não encontrado!');
-            break;
-        case 'admin_remove_vip':
-            const dbVipRem = require('../../database/connection').getDatabase();
-            dbVipRem.run(`CREATE TABLE IF NOT EXISTS vips (id INTEGER PRIMARY KEY AUTOINCREMENT, user_phone TEXT UNIQUE, is_vip BOOLEAN DEFAULT 0, plan_type TEXT DEFAULT 'mensal', price DECIMAL(10,2) DEFAULT 0, start_date DATETIME DEFAULT CURRENT_TIMESTAMP, expiration_date DATETIME, is_active BOOLEAN DEFAULT 1)`);
-            dbVipRem.prepare('UPDATE vips SET is_active = 0 WHERE user_phone = ?').run(text);
-            await sendMessage(chatId, `✅ VIP removido de ${text}!`);
-            break;
+        case 'add_service_image': const imgParts = text.split('==='); if (imgParts.length >= 2) { const db = require('../../database/connection').getDatabase(); db.prepare('INSERT INTO service_images (platform, image_url) VALUES (?, ?)').run(imgParts[0], imgParts[1]); await sendMessage(chatId, '✅ Imagem adicionada!'); } break;
+        case 'remove_service_image': const dbImg = require('../../database/connection').getDatabase(); dbImg.prepare('DELETE FROM service_images WHERE platform = ?').run(text); await sendMessage(chatId, '✅ Imagem removida!'); break;
+        case 'search_service_admin': const products = Product.findByPlatform(text.toUpperCase()); if (products.length > 0) { let resultMsg = `🔍 *${text.toUpperCase()}*\n\n`; for (const p of products) resultMsg += `📌 ${p.name} - R$ ${parseFloat(p.value).toFixed(2)} - Estoque: ${p.stock}\n`; await sendMessage(chatId, resultMsg); } else await sendMessage(chatId, '❌ Nenhum serviço encontrado!'); break;
+        case 'create_giftcard': const giftAmount = parseFloat(text); if (isNaN(giftAmount) || giftAmount <= 0) { await sendMessage(chatId, '❌ Valor inválido!'); } else { const giftCode = `GIFT-ADM-${Date.now().toString(36).toUpperCase()}`; const dbGift = require('../../database/connection').getDatabase(); dbGift.run(`CREATE TABLE IF NOT EXISTS giftcards (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE NOT NULL, amount DECIMAL(10,2) NOT NULL, buyer_phone TEXT, redeemer_phone TEXT, is_redeemed BOOLEAN DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, redeemed_at DATETIME)`); dbGift.prepare('INSERT INTO giftcards (code, amount, buyer_phone) VALUES (?, ?, ?)').run(giftCode, giftAmount, 'ADMIN'); await sendMessage(chatId, `✅ Gift Card criado!\n\n🎁 Código: *${giftCode}*\n💰 Valor: R$ ${giftAmount.toFixed(2)}`); } break;
+        case 'admin_activate_vip': const vipUser = User.findByPhone(text); if (vipUser) { const dbVip = require('../../database/connection').getDatabase(); dbVip.run(`CREATE TABLE IF NOT EXISTS vips (id INTEGER PRIMARY KEY AUTOINCREMENT, user_phone TEXT UNIQUE, is_vip BOOLEAN DEFAULT 0, plan_type TEXT DEFAULT 'mensal', price DECIMAL(10,2) DEFAULT 0, start_date DATETIME DEFAULT CURRENT_TIMESTAMP, expiration_date DATETIME, is_active BOOLEAN DEFAULT 1)`); const expDate = new Date(); expDate.setDate(expDate.getDate() + 30); const existingVip = dbVip.prepare('SELECT * FROM vips WHERE user_phone = ?').get(text); if (existingVip) dbVip.prepare('UPDATE vips SET is_vip = 1, is_active = 1, expiration_date = ? WHERE user_phone = ?').run(expDate.toISOString(), text); else dbVip.prepare('INSERT INTO vips (user_phone, is_vip, plan_type, price, expiration_date) VALUES (?, 1, ?, 0, ?)').run(text, 'Admin', expDate.toISOString()); await sendMessage(chatId, `✅ VIP ativado para ${text}!`); } else await sendMessage(chatId, '❌ Usuário não encontrado!'); break;
+        case 'admin_remove_vip': const dbVipRem = require('../../database/connection').getDatabase(); dbVipRem.run(`CREATE TABLE IF NOT EXISTS vips (id INTEGER PRIMARY KEY AUTOINCREMENT, user_phone TEXT UNIQUE, is_vip BOOLEAN DEFAULT 0, plan_type TEXT DEFAULT 'mensal', price DECIMAL(10,2) DEFAULT 0, start_date DATETIME DEFAULT CURRENT_TIMESTAMP, expiration_date DATETIME, is_active BOOLEAN DEFAULT 1)`); dbVipRem.prepare('UPDATE vips SET is_active = 0 WHERE user_phone = ?').run(text); await sendMessage(chatId, `✅ VIP removido de ${text}!`); break;
     }
 
     delete adminStates[chatId];
-    setTimeout(() => {
-        const user = User.findByTelegramId(telegramId);
-        if (user) showMainMenu(chatId, user);
-    }, 1000);
+    setTimeout(() => { const user = User.findByTelegramId(telegramId); if (user) showMainMenu(chatId, user); }, 1000);
 }
 
 async function showDashboard(chatId) {
@@ -506,10 +447,7 @@ async function showGeneralConfig(chatId) {
     await sendMenu(chatId, msg, getAdminGeneralConfigButtons());
 }
 
-async function showAdminsConfig(chatId) {
-    const admins = User.findAll().filter(u => u.is_admin);
-    await sendMenu(chatId, `👥 *ADMINS*\n\nTotal: ${admins.length}\n\nUse os botões:`, getAdminAdminsButtons());
-}
+async function showAdminsConfig(chatId) { const admins = User.findAll().filter(u => u.is_admin); await sendMenu(chatId, `👥 *ADMINS*\n\nTotal: ${admins.length}\n\nUse os botões:`, getAdminAdminsButtons()); }
 
 async function showAffiliatesConfig(chatId) {
     const refSystem = await getSetting('referral_system', 'on');
@@ -520,69 +458,41 @@ async function showAffiliatesConfig(chatId) {
     await sendMenu(chatId, msg, getAdminAffiliatesButtons());
 }
 
-async function showUsersConfig(chatId) {
-    const bonus = await getSetting('registration_bonus', '0.00');
-    await sendMenu(chatId, `👤 *USUÁRIOS*\n\n🎁 Bônus registro: R$ ${bonus}\n\nUse os botões:`, getAdminUsersButtons());
-}
+async function showUsersConfig(chatId) { const bonus = await getSetting('registration_bonus', '0.00'); await sendMenu(chatId, `👤 *USUÁRIOS*\n\n🎁 Bônus registro: R$ ${bonus}\n\nUse os botões:`, getAdminUsersButtons()); }
 
 async function showPixConfig(chatId) {
+    const pixMode = await getSetting('pix_mode', 'automatico');
     const token = await getSetting('mercadopago_token', '');
+    const manualKey = await getSetting('pix_manual_key', '');
+    const manualName = await getSetting('pix_manual_name', '');
     const minDep = await getSetting('pix_min_deposit', '1.00');
     const maxDep = await getSetting('pix_max_deposit', '150.00');
     const expiration = await getSetting('pix_expiration', '15');
     const bonus = await getSetting('pix_bonus', '0');
     const bonusMin = await getSetting('pix_bonus_min', '0.00');
-    const msg = `💠 *PIX*\n\n🔑 Token: ${token ? token.substring(0, 15) + '...' : 'Não configurado'}\n⬇️ Mín: R$ ${minDep}\n⬆️ Máx: R$ ${maxDep}\n⏰ Expiração: ${expiration} min\n🎁 Bônus: ${bonus}%\n📊 Min bônus: R$ ${bonusMin}\n\nUse os botões:`;
+    const msg = `💠 *PIX*\n\nModo: ${pixMode === 'manual' ? '🔴 MANUAL' : '🟢 AUTOMÁTICO'}\n🔑 Token: ${token ? token.substring(0, 15) + '...' : 'Não configurado'}\n🔑 Chave Manual: ${manualKey || 'Não configurada'}\n👤 Titular: ${manualName || 'Não configurado'}\n⬇️ Mín: R$ ${minDep}\n⬆️ Máx: R$ ${maxDep}\n⏰ Expiração: ${expiration} min\n🎁 Bônus: ${bonus}%\n📊 Min bônus: R$ ${bonusMin}\n\nUse os botões:`;
     await sendMenu(chatId, msg, getAdminPixButtons());
 }
 
-async function showLoginsConfig(chatId) {
-    const count = Product.countStock();
-    await sendMenu(chatId, `🔐 *LOGINS*\n\n📦 Estoque: ${count}\n\nUse os botões:`, getAdminLoginsButtons());
-}
+async function showLoginsConfig(chatId) { const count = Product.countStock(); await sendMenu(chatId, `🔐 *LOGINS*\n\n📦 Estoque: ${count}\n\nUse os botões:`, getAdminLoginsButtons()); }
 
-async function showSearchConfig(chatId) {
-    const db = require('../../database/connection').getDatabase();
-    const images = db.prepare('SELECT COUNT(*) as total FROM service_images').get().total;
-    await sendMenu(chatId, `🔍 *PESQUISA*\n\n🖼️ Imagens: ${images}\n\nUse os botões:`, getAdminSearchButtons());
-}
+async function showSearchConfig(chatId) { const db = require('../../database/connection').getDatabase(); const images = db.prepare('SELECT COUNT(*) as total FROM service_images').get().total; await sendMenu(chatId, `🔍 *PESQUISA*\n\n🖼️ Imagens: ${images}\n\nUse os botões:`, getAdminSearchButtons()); }
 
 async function showGiftCardsMenu(chatId) {
     const db = require('../../database/connection').getDatabase();
     db.run(`CREATE TABLE IF NOT EXISTS giftcards (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE NOT NULL, amount DECIMAL(10,2) NOT NULL, buyer_phone TEXT, redeemer_phone TEXT, is_redeemed BOOLEAN DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, redeemed_at DATETIME)`);
     const total = db.prepare('SELECT COUNT(*) as total FROM giftcards').get().total;
     const totalValue = db.prepare('SELECT SUM(amount) as total FROM giftcards').get().total || 0;
-    const msg = `🎁 *GIFT CARDS*\n\n📦 Total: ${total}\n💰 Valor total: R$ ${parseFloat(totalValue).toFixed(2)}\n\nUse os botões:`;
-    await sendMenu(chatId, msg, [['🎁 CRIAR GIFT CARD'], ['📋 LISTAR GIFT CARDS'], ['🔙 VOLTAR']]);
+    await sendMenu(chatId, `🎁 *GIFT CARDS*\n\n📦 Total: ${total}\n💰 Valor total: R$ ${parseFloat(totalValue).toFixed(2)}\n\nUse os botões:`, [['🎁 CRIAR GIFT CARD'], ['📋 LISTAR GIFT CARDS'], ['🔙 VOLTAR']]);
 }
 
-async function showGiftCardsList(chatId) {
-    const db = require('../../database/connection').getDatabase();
-    const giftcards = db.prepare('SELECT * FROM giftcards ORDER BY created_at DESC LIMIT 20').all();
-    let msg = '📋 *GIFT CARDS*\n\n';
-    for (const g of giftcards) msg += `🎁 ${g.code}\n💰 R$ ${parseFloat(g.amount).toFixed(2)}\n📌 ${g.is_redeemed ? '✅ Resgatado' : '⏳ Pendente'}\n━━━━━━\n`;
-    await sendMessage(chatId, msg);
-}
+async function showGiftCardsList(chatId) { const db = require('../../database/connection').getDatabase(); const giftcards = db.prepare('SELECT * FROM giftcards ORDER BY created_at DESC LIMIT 20').all(); let msg = '📋 *GIFT CARDS*\n\n'; for (const g of giftcards) msg += `🎁 ${g.code}\n💰 R$ ${parseFloat(g.amount).toFixed(2)}\n📌 ${g.is_redeemed ? '✅ Resgatado' : '⏳ Pendente'}\n━━━━━━\n`; await sendMessage(chatId, msg); }
 
-async function showVipAdminMenu(chatId, user) {
-    const db = require('../../database/connection').getDatabase();
-    db.run(`CREATE TABLE IF NOT EXISTS vips (id INTEGER PRIMARY KEY AUTOINCREMENT, user_phone TEXT UNIQUE, is_vip BOOLEAN DEFAULT 0, plan_type TEXT DEFAULT 'mensal', price DECIMAL(10,2) DEFAULT 0, start_date DATETIME DEFAULT CURRENT_TIMESTAMP, expiration_date DATETIME, is_active BOOLEAN DEFAULT 1)`);
-    const totalVips = db.prepare('SELECT COUNT(*) as total FROM vips WHERE is_active = 1').get().total;
-    await sendMenu(chatId, `👑 *VIP ADMIN*\n\n👥 Vips ativos: ${totalVips}\n\nUse os botões:`, [['👑 ATIVAR VIP USUÁRIO'], ['👑 REMOVER VIP USUÁRIO'], ['📋 LISTAR VIPS'], ['🔙 VOLTAR']]);
-}
+async function showVipAdminMenu(chatId, user) { const db = require('../../database/connection').getDatabase(); db.run(`CREATE TABLE IF NOT EXISTS vips (id INTEGER PRIMARY KEY AUTOINCREMENT, user_phone TEXT UNIQUE, is_vip BOOLEAN DEFAULT 0, plan_type TEXT DEFAULT 'mensal', price DECIMAL(10,2) DEFAULT 0, start_date DATETIME DEFAULT CURRENT_TIMESTAMP, expiration_date DATETIME, is_active BOOLEAN DEFAULT 1)`); const totalVips = db.prepare('SELECT COUNT(*) as total FROM vips WHERE is_active = 1').get().total; await sendMenu(chatId, `👑 *VIP ADMIN*\n\n👥 Vips ativos: ${totalVips}\n\nUse os botões:`, [['👑 ATIVAR VIP USUÁRIO'], ['👑 REMOVER VIP USUÁRIO'], ['📋 LISTAR VIPS'], ['🔙 VOLTAR']]); }
 
-async function showVipsList(chatId) {
-    const db = require('../../database/connection').getDatabase();
-    const vips = db.prepare('SELECT * FROM vips WHERE is_active = 1').all();
-    let msg = '📋 *VIPS ATIVOS*\n\n';
-    for (const v of vips) msg += `👤 ${v.user_phone}\n📅 Venc: ${new Date(v.expiration_date).toLocaleDateString('pt-BR')}\n💰 R$ ${parseFloat(v.price).toFixed(2)}\n━━━━━━\n`;
-    await sendMessage(chatId, msg);
-}
+async function showVipsList(chatId) { const db = require('../../database/connection').getDatabase(); const vips = db.prepare('SELECT * FROM vips WHERE is_active = 1').all(); let msg = '📋 *VIPS ATIVOS*\n\n'; for (const v of vips) msg += `👤 ${v.user_phone}\n📅 Venc: ${new Date(v.expiration_date).toLocaleDateString('pt-BR')}\n💰 R$ ${parseFloat(v.price).toFixed(2)}\n━━━━━━\n`; await sendMessage(chatId, msg); }
 
-async function showProfile(chatId, user) {
-    const msg = `👤 *PERFIL*\n\n📞 ${user.phone || 'N/A'}\n💰 Saldo: R$ ${parseFloat(user.balance || 0).toFixed(2)}\n⭐ Pontos: ${user.referral_points || 0}\n👥 Indicados: ${user.total_referrals || 0}\n👑 Admin: ${user.is_admin ? 'Sim' : 'Não'}\n🚫 Bloqueado: ${user.is_blocked ? 'Sim' : 'Não'}`;
-    await sendMenu(chatId, msg, [['🏠 MENU INICIAL']]);
-}
+async function showProfile(chatId, user) { const msg = `👤 *PERFIL*\n\n📞 ${user.phone || 'N/A'}\n💰 Saldo: R$ ${parseFloat(user.balance || 0).toFixed(2)}\n⭐ Pontos: ${user.referral_points || 0}\n👥 Indicados: ${user.total_referrals || 0}\n👑 Admin: ${user.is_admin ? 'Sim' : 'Não'}\n🚫 Bloqueado: ${user.is_blocked ? 'Sim' : 'Não'}`; await sendMenu(chatId, msg, [['🏠 MENU INICIAL']]); }
 
 async function handleCallbackQuery(bot, query) {}
 
