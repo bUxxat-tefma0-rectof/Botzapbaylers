@@ -2,14 +2,10 @@
   "name": "doguinha-store",
   "version": "1.0.0",
   "description": "Bot WhatsApp Doguinha Store + Painel Admin Telegram",
-  "main": "src/src/index.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node src/src/index.js",
-    "dev": "nodemon src/src/index.js"
+    "start": "node index.js"
   },
-  "keywords": ["whatsapp-bot", "telegram-bot", "mercadopago", "pix", "doguinha-store"],
-  "author": "Doguinha Store",
-  "license": "ISC",
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.0",
     "@hapi/boom": "^10.0.1",
@@ -26,8 +22,5 @@
     "node-cron": "^3.0.3",
     "qrcode": "^1.5.3",
     "cors": "^2.8.5"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.3"
   }
 }
