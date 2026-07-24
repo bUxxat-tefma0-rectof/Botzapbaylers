@@ -7,7 +7,8 @@ const { handlePremiumMenu } = require('./productController');
 const { handleReferralMenu } = require('./referralController');
 const { handleSupportMenu } = require('./supportController');
 const { handleRentBotMenu } = require('./rentController');
-const { handleSearchService } = require('./searchController');
+const { handleSearchService, processSearchQuery } = require('./searchController');
+const { handleCustomPixValue } = require('./paymentController');
 const logger = require('../../utils/logger');
 
 async function handleMessage(sock, message) {
@@ -39,14 +40,24 @@ async function handleMessage(sock, message) {
             return;
         }
 
-        // Texto normal
+        // Aguardando input
         if (messageText && !messageText.startsWith('/')) {
             const waiting = global.waitingFor || {};
+
             if (waiting[phone] === 'custom_pix_value') {
                 delete waiting[phone];
+                global.waitingFor = waiting;
                 await handleCustomPixValue(phone, user, messageText);
                 return;
             }
+
+            if (waiting[phone] === 'search_service_query') {
+                delete waiting[phone];
+                global.waitingFor = waiting;
+                await processSearchQuery(phone, user, messageText);
+                return;
+            }
+
             await showMainMenu(phone, user);
         }
 
@@ -177,8 +188,6 @@ async function showProfile(phone, user) {
         logger.error('❌ Erro ao mostrar perfil:', error);
     }
 }
-
-const { handleCustomPixValue } = require('./paymentController');
 
 module.exports = {
     handleMessage,
