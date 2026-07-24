@@ -1,14 +1,14 @@
 const { sendButtonMessage, sendTextMessage, sendImageMessage } = require('../../services/whatsapp');
 const User = require('../../database/models/User');
 const { getMessage, processMessageVariables } = require('../../utils/messages');
-const { getMainMenuButtons } = require('../../utils/buttons');
-const { handlePaymentMenu } = require('./paymentController');
-const { handlePremiumMenu } = require('./productController');
-const { handleReferralMenu } = require('./referralController');
+const { handlePaymentMenu, handleCustomPixValue } = require('./paymentController');
+const { handlePremiumMenu, handleProductPurchase, handleConfirmPurchase } = require('./productController');
+const { handleReferralMenu, sendReferralTextModel, processReferralCode } = require('./referralController');
 const { handleSupportMenu } = require('./supportController');
 const { handleRentBotMenu } = require('./rentController');
 const { handleSearchService, processSearchQuery } = require('./searchController');
-const { handleCustomPixValue } = require('./paymentController');
+const { handleGiftCardMenu, handleGiftCardPurchase, handleCustomGiftCardValue, handleConfirmGiftCard, handleRedeemGiftCard, handleMyGiftCards } = require('./giftcardController');
+const { handleVipMenu, handleVipPurchase, handleConfirmVip } = require('./vipController');
 const logger = require('../../utils/logger');
 
 async function handleMessage(sock, message) {
@@ -26,9 +26,14 @@ async function handleMessage(sock, message) {
             return;
         }
 
+        // Resgatar Gift Card (código GIFT-XXXX)
+        if (messageText && messageText.toUpperCase().startsWith('GIFT-')) {
+            await handleRedeemGiftCard(phone, user, messageText);
+            return;
+        }
+
         // Código de indicação
         if (messageText && messageText.toUpperCase().startsWith('BONUS_COD_')) {
-            const { processReferralCode } = require('./referralController');
             await processReferralCode(phone, messageText, user);
             await showMainMenu(phone, user);
             return;
@@ -55,6 +60,13 @@ async function handleMessage(sock, message) {
                 delete waiting[phone];
                 global.waitingFor = waiting;
                 await processSearchQuery(phone, user, messageText);
+                return;
+            }
+
+            if (waiting[phone] === 'giftcard_custom_value') {
+                delete waiting[phone];
+                global.waitingFor = waiting;
+                await handleCustomGiftCardValue(phone, user, messageText);
                 return;
             }
 
@@ -91,9 +103,14 @@ async function showMainMenu(phone, user) {
         const referralCount = user.total_referrals || 0;
         const referralPoints = user.referral_points || 0;
 
+        // Verificar VIP
+        const { isVip } = require('./vipController');
+        const vipStatus = isVip(phone);
+
         let headerMessage = `🤖 *DOGUINHA STORE BOT* 🤖\n\n`;
         headerMessage += `🛒 Compras feitas: ${purchasesCount}\n`;
-        headerMessage += `🎁 GiftCard's resgatados: ${parseFloat(giftcardsRedeemed).toFixed(2)}\n\n`;
+        headerMessage += `🎁 GiftCard's resgatados: ${parseFloat(giftcardsRedeemed).toFixed(2)}\n`;
+        headerMessage += `👑 VIP: ${vipStatus ? '✅ Ativo' : '❌ Não'}\n\n`;
         headerMessage += `💼 *Área Afiliados*\n`;
         headerMessage += `🔗 Seu link: ${referralLink}\n`;
         headerMessage += `👥 Afiliados: ${referralCount}\n`;
@@ -106,6 +123,8 @@ async function showMainMenu(phone, user) {
             { id: 'profile', text: '👤 PERFIL' },
             { id: 'add_balance', text: '💰 ADICIONAR SALDO' },
             { id: 'premium', text: '👑 ASSINATURA PREMIUM' },
+            { id: 'giftcard_menu', text: '🎁 GIFT CARDS' },
+            { id: 'vip_menu', text: '👑 VIP' },
             { id: 'referral', text: '💼 ÁREA DO ASSOCIADO' },
             { id: 'support', text: '📞 SUPORTE' },
             { id: 'rent_bot', text: '🤖 ALUGAR BOT' },
@@ -126,6 +145,12 @@ async function handleButtonClick(phone, buttonId, user) {
             return await handlePaymentMenu(phone, user);
         case 'premium':
             return await handlePremiumMenu(phone, user);
+        case 'giftcard_menu':
+            return await handleGiftCardMenu(phone, user);
+        case 'my_giftcards':
+            return await handleMyGiftCards(phone, user);
+        case 'vip_menu':
+            return await handleVipMenu(phone, user);
         case 'referral':
             return await handleReferralMenu(phone, user);
         case 'support':
@@ -137,23 +162,38 @@ async function handleButtonClick(phone, buttonId, user) {
         case 'main_menu':
             return await showMainMenu(phone, user);
         case 'text_model':
-            const { sendReferralTextModel } = require('./referralController');
             return await sendReferralTextModel(phone, user);
         default:
+            // PIX
             if (buttonId.startsWith('pix_')) {
                 return await handlePaymentMenu(phone, user, buttonId);
             }
+            // Produtos
             if (buttonId.startsWith('buy_')) {
-                const { handleProductPurchase } = require('./productController');
                 return await handleProductPurchase(phone, user, buttonId);
             }
             if (buttonId.startsWith('confirm_buy_')) {
-                const { handleConfirmPurchase } = require('./productController');
                 return await handleConfirmPurchase(phone, user, buttonId);
             }
             if (buttonId.startsWith('premium_page_')) {
                 const page = parseInt(buttonId.replace('premium_page_', ''));
                 return await handlePremiumMenu(phone, user, page);
+            }
+            // Gift Cards
+            if (buttonId.startsWith('giftcard_')) {
+                return await handleGiftCardPurchase(phone, user, buttonId);
+            }
+            if (buttonId.startsWith('confirm_giftcard_')) {
+                const amount = parseFloat(buttonId.replace('confirm_giftcard_', ''));
+                return await handleConfirmGiftCard(phone, user, amount);
+            }
+            // VIP
+            if (buttonId.startsWith('vip_')) {
+                return await handleVipPurchase(phone, user, buttonId);
+            }
+            if (buttonId.startsWith('confirm_vip_')) {
+                const planType = buttonId.replace('confirm_', '');
+                return await handleConfirmVip(phone, user, planType);
             }
             await showMainMenu(phone, user);
     }
@@ -165,13 +205,16 @@ async function showProfile(phone, user) {
         const purchasesCount = db.prepare("SELECT COUNT(*) as total FROM transactions WHERE user_phone = ? AND type = 'purchase' AND status = 'approved'").get(phone).total;
         const totalSpent = db.prepare("SELECT SUM(amount) as total FROM transactions WHERE user_phone = ? AND type = 'purchase' AND status = 'approved'").get(phone).total || 0;
         const totalDeposited = db.prepare("SELECT SUM(amount) as total FROM transactions WHERE user_phone = ? AND type = 'deposit' AND status = 'approved'").get(phone).total || 0;
+        const { isVip } = require('./vipController');
+        const vipStatus = isVip(phone);
 
         const profileMessage = `👤 *SEU PERFIL*\n\n` +
             `📞 Número: ${phone}\n` +
             `💰 Saldo: R$ ${parseFloat(user.balance || 0).toFixed(2)}\n` +
             `🎁 Bônus: R$ ${parseFloat(user.bonus_balance || 0).toFixed(2)}\n` +
             `⭐ Pontos: ${user.referral_points || 0}\n` +
-            `👥 Indicados: ${user.total_referrals || 0}\n\n` +
+            `👥 Indicados: ${user.total_referrals || 0}\n` +
+            `👑 VIP: ${vipStatus ? '✅ Ativo' : '❌ Não'}\n\n` +
             `📊 *ESTATÍSTICAS:*\n` +
             `🛒 Compras: ${purchasesCount}\n` +
             `💳 Total gasto: R$ ${parseFloat(totalSpent).toFixed(2)}\n` +
@@ -180,6 +223,8 @@ async function showProfile(phone, user) {
 
         const buttons = [
             { id: 'add_balance', text: '💰 ADICIONAR SALDO' },
+            { id: 'vip_menu', text: '👑 VIP' },
+            { id: 'my_giftcards', text: '🎁 MEUS GIFT CARDS' },
             { id: 'main_menu', text: '🏠 MENU INICIAL' }
         ];
 
