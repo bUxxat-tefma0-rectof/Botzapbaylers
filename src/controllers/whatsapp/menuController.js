@@ -1,4 +1,4 @@
-const { sendButtonMessage, sendTextMessage } = require('../../services/whatsapp');
+const { sendButtonMessage, sendTextMessage, sendImageMessage } = require('../../services/whatsapp');
 const User = require('../../database/models/User');
 const { getMessage, processMessageVariables } = require('../../utils/messages');
 const { getMainMenuButtons } = require('../../utils/buttons');
@@ -6,6 +6,8 @@ const { handlePaymentMenu } = require('./paymentController');
 const { handlePremiumMenu } = require('./productController');
 const { handleReferralMenu } = require('./referralController');
 const { handleSupportMenu } = require('./supportController');
+const { handleRentBotMenu } = require('./rentController');
+const { handleSearchService } = require('./searchController');
 const logger = require('../../utils/logger');
 
 async function handleMessage(sock, message) {
@@ -23,6 +25,7 @@ async function handleMessage(sock, message) {
             return;
         }
 
+        // Código de indicação
         if (messageText && messageText.toUpperCase().startsWith('BONUS_COD_')) {
             const { processReferralCode } = require('./referralController');
             await processReferralCode(phone, messageText, user);
@@ -30,14 +33,14 @@ async function handleMessage(sock, message) {
             return;
         }
 
+        // Botões
         if (messageType === 'buttons_response') {
             await handleButtonClick(phone, messageText, user);
             return;
         }
 
+        // Texto normal
         if (messageText && !messageText.startsWith('/')) {
-            // Verificar se está aguardando valor PIX
-            const { handleCustomPixValue } = require('./paymentController');
             const waiting = global.waitingFor || {};
             if (waiting[phone] === 'custom_pix_value') {
                 delete waiting[phone];
@@ -70,9 +73,35 @@ function getMessageText(message) {
 
 async function showMainMenu(phone, user) {
     try {
-        const message = processMessageVariables('welcome', user);
-        const buttons = getMainMenuButtons();
-        await sendButtonMessage(phone, message, buttons);
+        const db = require('../../database/connection').getDatabase();
+        const purchasesCount = db.prepare("SELECT COUNT(*) as total FROM transactions WHERE user_phone = ? AND type = 'purchase' AND status = 'approved'").get(phone).total;
+        const giftcardsRedeemed = db.prepare("SELECT SUM(amount) as total FROM transactions WHERE user_phone = ? AND type = 'giftcard' AND status = 'approved'").get(phone).total || 0;
+        const referralLink = `https://t.me/DoguinhaStoreBot?start=${user.referral_code}`;
+        const referralCount = user.total_referrals || 0;
+        const referralPoints = user.referral_points || 0;
+
+        let headerMessage = `🤖 *DOGUINHA STORE BOT* 🤖\n\n`;
+        headerMessage += `🛒 Compras feitas: ${purchasesCount}\n`;
+        headerMessage += `🎁 GiftCard's resgatados: ${parseFloat(giftcardsRedeemed).toFixed(2)}\n\n`;
+        headerMessage += `💼 *Área Afiliados*\n`;
+        headerMessage += `🔗 Seu link: ${referralLink}\n`;
+        headerMessage += `👥 Afiliados: ${referralCount}\n`;
+        headerMessage += `⭐ Pontos: ${referralPoints}\n\n`;
+        headerMessage += `ℹ️ *Seus Dados:*\n`;
+        headerMessage += `├💠 Número: ${phone}\n`;
+        headerMessage += `└💸 Saldo Atual: R$ ${parseFloat(user.balance || 0).toFixed(2)}`;
+
+        const buttons = [
+            { id: 'profile', text: '👤 PERFIL' },
+            { id: 'add_balance', text: '💰 ADICIONAR SALDO' },
+            { id: 'premium', text: '👑 ASSINATURA PREMIUM' },
+            { id: 'referral', text: '💼 ÁREA DO ASSOCIADO' },
+            { id: 'support', text: '📞 SUPORTE' },
+            { id: 'rent_bot', text: '🤖 ALUGAR BOT' },
+            { id: 'search_service', text: '🔍 PESQUISAR SERVIÇO' }
+        ];
+
+        await sendButtonMessage(phone, headerMessage, buttons);
     } catch (error) {
         logger.error('❌ Erro ao mostrar menu:', error);
     }
@@ -80,6 +109,8 @@ async function showMainMenu(phone, user) {
 
 async function handleButtonClick(phone, buttonId, user) {
     switch (buttonId) {
+        case 'profile':
+            return await showProfile(phone, user);
         case 'add_balance':
             return await handlePaymentMenu(phone, user);
         case 'premium':
@@ -88,6 +119,10 @@ async function handleButtonClick(phone, buttonId, user) {
             return await handleReferralMenu(phone, user);
         case 'support':
             return await handleSupportMenu(phone, user);
+        case 'rent_bot':
+            return await handleRentBotMenu(phone, user);
+        case 'search_service':
+            return await handleSearchService(phone, user);
         case 'main_menu':
             return await showMainMenu(phone, user);
         case 'text_model':
@@ -112,6 +147,38 @@ async function handleButtonClick(phone, buttonId, user) {
             await showMainMenu(phone, user);
     }
 }
+
+async function showProfile(phone, user) {
+    try {
+        const db = require('../../database/connection').getDatabase();
+        const purchasesCount = db.prepare("SELECT COUNT(*) as total FROM transactions WHERE user_phone = ? AND type = 'purchase' AND status = 'approved'").get(phone).total;
+        const totalSpent = db.prepare("SELECT SUM(amount) as total FROM transactions WHERE user_phone = ? AND type = 'purchase' AND status = 'approved'").get(phone).total || 0;
+        const totalDeposited = db.prepare("SELECT SUM(amount) as total FROM transactions WHERE user_phone = ? AND type = 'deposit' AND status = 'approved'").get(phone).total || 0;
+
+        const profileMessage = `👤 *SEU PERFIL*\n\n` +
+            `📞 Número: ${phone}\n` +
+            `💰 Saldo: R$ ${parseFloat(user.balance || 0).toFixed(2)}\n` +
+            `🎁 Bônus: R$ ${parseFloat(user.bonus_balance || 0).toFixed(2)}\n` +
+            `⭐ Pontos: ${user.referral_points || 0}\n` +
+            `👥 Indicados: ${user.total_referrals || 0}\n\n` +
+            `📊 *ESTATÍSTICAS:*\n` +
+            `🛒 Compras: ${purchasesCount}\n` +
+            `💳 Total gasto: R$ ${parseFloat(totalSpent).toFixed(2)}\n` +
+            `💰 Total depositado: R$ ${parseFloat(totalDeposited).toFixed(2)}\n` +
+            `📅 Cadastro: ${user.created_at ? new Date(user.created_at).toLocaleDateString('pt-BR') : 'N/A'}`;
+
+        const buttons = [
+            { id: 'add_balance', text: '💰 ADICIONAR SALDO' },
+            { id: 'main_menu', text: '🏠 MENU INICIAL' }
+        ];
+
+        await sendButtonMessage(phone, profileMessage, buttons);
+    } catch (error) {
+        logger.error('❌ Erro ao mostrar perfil:', error);
+    }
+}
+
+const { handleCustomPixValue } = require('./paymentController');
 
 module.exports = {
     handleMessage,
