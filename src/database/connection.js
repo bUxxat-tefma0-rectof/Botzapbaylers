@@ -88,7 +88,7 @@ async function initializeDatabase() {
                 id TEXT PRIMARY KEY,
                 user_phone TEXT,
                 user_telegram TEXT,
-                type TEXT NOT NULL CHECK(type IN ('deposit', 'purchase')),
+                type TEXT NOT NULL CHECK(type IN ('deposit', 'purchase', 'giftcard', 'giftcard_purchase', 'vip_purchase')),
                 amount DECIMAL(10,2) NOT NULL,
                 status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'cancelled', 'expired')),
                 pix_code TEXT,
@@ -145,6 +145,34 @@ async function initializeDatabase() {
             )
         `);
 
+        // Tabela: giftcards
+        db.exec(`
+            CREATE TABLE IF NOT EXISTS giftcards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT UNIQUE NOT NULL,
+                amount DECIMAL(10,2) NOT NULL,
+                buyer_phone TEXT,
+                redeemer_phone TEXT,
+                is_redeemed BOOLEAN DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                redeemed_at DATETIME
+            )
+        `);
+
+        // Tabela: vips
+        db.exec(`
+            CREATE TABLE IF NOT EXISTS vips (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_phone TEXT UNIQUE,
+                is_vip BOOLEAN DEFAULT 0,
+                plan_type TEXT DEFAULT 'mensal',
+                price DECIMAL(10,2) DEFAULT 0,
+                start_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+                expiration_date DATETIME,
+                is_active BOOLEAN DEFAULT 1
+            )
+        `);
+
         // Inserir dono
         const ownerPhone = config.bot.ownerNumber;
         if (ownerPhone) {
@@ -189,6 +217,7 @@ function insertDefaultSettings() {
         { key: 'pix_expiration', value: '15', type: 'integer', description: 'Expiração PIX (minutos)' },
         { key: 'pix_bonus', value: '0', type: 'integer', description: 'Bônus de depósito (%)' },
         { key: 'pix_bonus_min', value: '0.00', type: 'decimal', description: 'Depósito mínimo para bônus' },
+        { key: 'pix_mode', value: 'automatico', type: 'string', description: 'Modo PIX (manual/automatico)' },
     ];
 
     const insert = db.prepare('INSERT OR IGNORE INTO settings (key, value, type, description) VALUES (?, ?, ?, ?)');
