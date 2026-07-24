@@ -9,10 +9,6 @@ async function runMigration() {
         logger.info('✅ Migração concluída!');
         closeDatabase();
         process.exit(0);
-    } catch (error) {
-        logger.error('❌ Erro na migração:', error);
-        process.exit(1);
-    }
+    } catch (error) { logger.error('❌ Erro:', error); process.exit(1); }
 }
-
 runMigration();
