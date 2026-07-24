@@ -22,30 +22,23 @@ async function handleAdminMessage(bot, msg) {
     const telegramId = String(msg.from.id);
 
     try {
-        // Verificar se é admin
         const user = User.findByTelegramId(telegramId);
         if (!user || !user.is_admin) {
             await sendMessage(chatId, '⛔ Acesso negado!');
             return;
         }
 
-        // Comando /admin
-        if (text === '/admin' || text === '🏠 MENU INICIAL') {
+        // Comando /start ou /admin
+        if (text === '/start' || text === '/admin' || text === '🏠 MENU INICIAL') {
             delete adminStates[chatId];
-            await showDashboard(chatId);
+            await showMainMenu(chatId, user);
             return;
         }
 
         // Voltar
         if (text === '🔙 VOLTAR') {
-            const state = adminStates[chatId];
-            if (state && state.parent) {
-                delete adminStates[chatId];
-                await showDashboard(chatId);
-            } else {
-                delete adminStates[chatId];
-                await showDashboard(chatId);
-            }
+            delete adminStates[chatId];
+            await showMainMenu(chatId, user);
             return;
         }
 
@@ -62,51 +55,63 @@ async function handleAdminMessage(bot, msg) {
     }
 }
 
-async function showDashboard(chatId) {
-    const usersCount = User.count();
-    const totalRevenue = Transaction.totalSales();
-    const monthlyRevenue = Transaction.salesThisMonth();
-    const todayRevenue = Transaction.depositsToday() + Transaction.salesToday();
-    const totalSales = Transaction.count();
-    const todaySales = Transaction.countToday();
+async function showMainMenu(chatId, user) {
+    const purchasesCount = Transaction.countToday();
+    const giftcardsTotal = Transaction.totalDeposits();
+    const referralLink = `https://t.me/DoguinhaStoreBot?start=${user.referral_code || ''}`;
+    const referralCount = user.total_referrals || 0;
+    const referralPoints = user.referral_points || 0;
 
-    const message = `📊 *DASHBOARD DOGUINHA STORE*\n\n` +
-                    `👥 Users: ${usersCount}\n` +
-                    `💰 Receita total: R$ ${totalRevenue.toFixed(2)}\n` +
-                    `📅 Receita mensal: R$ ${monthlyRevenue.toFixed(2)}\n` +
-                    `📆 Receita de hoje: R$ ${todayRevenue.toFixed(2)}\n` +
-                    `🛒 Vendas total: ${totalSales}\n` +
-                    `🛍️ Vendas hoje: ${todaySales}\n\n` +
-                    `Use os botões abaixo:`;
+    const message = `🤖 *DOGUINHA STORE ADMIN*\n\n` +
+        `🛒 Compras feitas: ${purchasesCount}\n` +
+        `🎁 GiftCard's resgatados: ${parseFloat(giftcardsTotal).toFixed(2)}\n\n` +
+        `💼 *Área Afiliados*\n` +
+        `🔗 Seu link: ${referralLink}\n` +
+        `👥 Afiliados: ${referralCount}\n` +
+        `⭐ Pontos: ${referralPoints}\n\n` +
+        `Use os botões abaixo:`;
 
-    const buttons = getAdminDashboardButtons();
+    const buttons = [
+        ['👤 PERFIL', '💰 ADICIONAR SALDO'],
+        ['📞 SUPORTE', '🤖 ALUGAR BOT'],
+        ['🔍 PESQUISAR SERVIÇO'],
+        ['📊 DASHBOARD ADMIN']
+    ];
+
     await sendMenu(chatId, message, buttons);
 }
 
 async function handleMenuNavigation(chatId, text, telegramId) {
+    const user = User.findByTelegramId(telegramId);
+
     switch (text) {
+        case '📊 DASHBOARD ADMIN':
+            adminStates[chatId] = { menu: 'dashboard', parent: 'main' };
+            await showDashboard(chatId);
+            break;
+
         case '⚙️ CONFIGURAÇÕES':
-            adminStates[chatId] = { menu: 'config', parent: 'main' };
+            adminStates[chatId] = { menu: 'config', parent: 'dashboard' };
             await showConfigMenu(chatId);
             break;
 
         case '⚡ AÇÕES':
-            adminStates[chatId] = { menu: 'actions', parent: 'main' };
+            adminStates[chatId] = { menu: 'actions', parent: 'dashboard' };
             await sendMenu(chatId, '⚡ *AÇÕES*\n\nEm desenvolvimento.', getAdminActionsButtons());
             break;
 
         case '💳 TRANSAÇÕES':
-            adminStates[chatId] = { menu: 'transactions', parent: 'main' };
+            adminStates[chatId] = { menu: 'transactions', parent: 'dashboard' };
             const lastTransactions = Transaction.findAll(10);
             let msg = '💳 *ÚLTIMAS TRANSAÇÕES:*\n\n';
             for (const t of lastTransactions) {
-                msg += `🆔 ${t.id}\n👤 ${t.user_phone}\n💰 R$ ${parseFloat(t.amount).toFixed(2)}\n📌 ${t.type} - ${t.status}\n━━━━━━\n`;
+                msg += `🆔 ${t.id.substring(0, 8)}...\n👤 ${t.user_phone}\n💰 R$ ${parseFloat(t.amount).toFixed(2)}\n📌 ${t.type} - ${t.status}\n━━━━━━\n`;
             }
             await sendMenu(chatId, msg, getAdminTransactionsButtons());
             break;
 
         case '🔄 ATUALIZAÇÕES':
-            await sendMenu(chatId, '🔄 *ATUALIZAÇÕES*\n\nVersão: 1.0.0\nTudo funcionando!', getAdminUpdatesButtons());
+            await sendMenu(chatId, '🔄 *ATUALIZAÇÕES*\n\nVersão: 1.0.0\n✅ Sistema funcionando normalmente!', getAdminUpdatesButtons());
             break;
 
         // Configurações
@@ -159,6 +164,15 @@ async function handleMenuNavigation(chatId, text, telegramId) {
         case '📋 MUDAR DESTINO LOG':
             adminStates[chatId] = { action: 'change_log_dest' };
             await sendMessage(chatId, '📋 Envie o novo destino de log:');
+            break;
+
+        case '🔄 RENOVAR PLANO':
+            await sendMessage(chatId, '🔄 Função de renovar plano em desenvolvimento.');
+            break;
+
+        case '🔁 REINICIAR BOT':
+            await sendMessage(chatId, '🔁 Reiniciando bot...');
+            process.exit(0);
             break;
 
         case '🛑 MANUTENÇÃO':
@@ -305,6 +319,29 @@ async function handleMenuNavigation(chatId, text, telegramId) {
             adminStates[chatId] = { action: 'remove_service_image' };
             await sendMessage(chatId, '🗑️ Envie o nome da plataforma para remover a imagem:');
             break;
+
+        // Menu principal
+        case '👤 PERFIL':
+            await showProfile(chatId, user);
+            break;
+
+        case '💰 ADICIONAR SALDO':
+            await sendMessage(chatId, '💰 Para adicionar saldo, use o bot no WhatsApp.\n\nNúmero: ' + process.env.WHATSAPP_NUMBER);
+            break;
+
+        case '📞 SUPORTE':
+            const supportLink = await getSetting('support_link', '');
+            await sendMessage(chatId, `📞 *SUPORTE*\n\nEntre em contato pelo link:\n👉 ${supportLink || 'Não configurado'}`);
+            break;
+
+        case '🤖 ALUGAR BOT':
+            await sendMessage(chatId, '🤖 *ALUGAR BOT*\n\nQuer ter seu próprio bot?\n\nEntre em contato para saber valores e condições!');
+            break;
+
+        case '🔍 PESQUISAR SERVIÇO':
+            adminStates[chatId] = { action: 'search_service_admin' };
+            await sendMessage(chatId, '🔍 Envie o nome do serviço que deseja pesquisar:');
+            break;
     }
 }
 
@@ -422,7 +459,8 @@ async function handleStateInput(chatId, text, telegramId) {
                     `🎁 Bônus: R$ ${parseFloat(foundUser.bonus_balance).toFixed(2)}\n` +
                     `👥 Indicados: ${foundUser.total_referrals}\n` +
                     `⭐ Pontos: ${foundUser.referral_points}\n` +
-                    `🚫 Bloqueado: ${foundUser.is_blocked ? 'Sim' : 'Não'}`;
+                    `🚫 Bloqueado: ${foundUser.is_blocked ? 'Sim' : 'Não'}\n\n` +
+                    `Para editar saldo, use os comandos disponíveis.`;
                 await sendMessage(chatId, msg);
             } else {
                 await sendMessage(chatId, '❌ Usuário não encontrado!');
@@ -483,10 +521,46 @@ async function handleStateInput(chatId, text, telegramId) {
             db.prepare('DELETE FROM service_images WHERE platform = ?').run(text);
             await sendMessage(chatId, '✅ Imagem removida!');
             break;
+
+        case 'search_service_admin':
+            const products = Product.findByPlatform(text.toUpperCase());
+            if (products.length > 0) {
+                let resultMsg = `🔍 *RESULTADOS PARA: ${text.toUpperCase()}*\n\n`;
+                for (const p of products) {
+                    resultMsg += `📌 ${p.name} - R$ ${parseFloat(p.value).toFixed(2)} - Estoque: ${p.stock}\n`;
+                }
+                await sendMessage(chatId, resultMsg);
+            } else {
+                await sendMessage(chatId, '❌ Nenhum serviço encontrado!');
+            }
+            break;
     }
 
     delete adminStates[chatId];
-    setTimeout(() => showDashboard(chatId), 1000);
+    setTimeout(() => {
+        const user = User.findByTelegramId(telegramId);
+        if (user) showMainMenu(chatId, user);
+    }, 1000);
+}
+
+async function showDashboard(chatId) {
+    const usersCount = User.count();
+    const totalRevenue = Transaction.totalSales();
+    const monthlyRevenue = Transaction.salesThisMonth();
+    const todayRevenue = Transaction.depositsToday() + Transaction.salesToday();
+    const totalSales = Transaction.count();
+    const todaySales = Transaction.countToday();
+
+    const message = `📊 *DASHBOARD*\n\n` +
+        `👥 Users: ${usersCount}\n` +
+        `💰 Receita total: R$ ${totalRevenue.toFixed(2)}\n` +
+        `📅 Receita mensal: R$ ${monthlyRevenue.toFixed(2)}\n` +
+        `📆 Receita de hoje: R$ ${todayRevenue.toFixed(2)}\n` +
+        `🛒 Vendas total: ${totalSales}\n` +
+        `🛍️ Vendas hoje: ${todaySales}\n\n` +
+        `Use os botões abaixo:`;
+
+    await sendMenu(chatId, message, getAdminDashboardButtons());
 }
 
 async function showConfigMenu(chatId) {
@@ -500,11 +574,11 @@ async function showGeneralConfig(chatId) {
     const maintenance = await getSetting('maintenance_mode', 'off');
 
     const msg = `📝 *CONFIGURAÇÕES GERAIS*\n\n` +
-                `📞 Suporte: ${supportLink || 'Não configurado'}\n` +
-                `🔣 Separador: ${separator}\n` +
-                `📋 Log Destino: ${logDest || 'Não configurado'}\n` +
-                `🛑 Manutenção: ${maintenance.toUpperCase()}\n\n` +
-                `Use os botões:`;
+        `📞 Suporte: ${supportLink || 'Não configurado'}\n` +
+        `🔣 Separador: ${separator}\n` +
+        `📋 Log Destino: ${logDest || 'Não configurado'}\n` +
+        `🛑 Manutenção: ${maintenance.toUpperCase()}\n\n` +
+        `Use os botões:`;
 
     await sendMenu(chatId, msg, getAdminGeneralConfigButtons());
 }
@@ -521,20 +595,18 @@ async function showAffiliatesConfig(chatId) {
     const multiplier = await getSetting('referral_multiplier', '0.01');
 
     const msg = `🔗 *CONFIGURAR AFILIADOS*\n\n` +
-                `🔄 Sistema: ${refSystem === 'on' ? '✅ ON' : '❌ OFF'}\n` +
-                `⭐ Pontos por recarga: ${pointsPerRecharge}\n` +
-                `📊 Pontos mínimos: ${minPoints}\n` +
-                `✖️ Multiplicador: ${multiplier}\n\n` +
-                `Use os botões:`;
+        `🔄 Sistema: ${refSystem === 'on' ? '✅ ON' : '❌ OFF'}\n` +
+        `⭐ Pontos por recarga: ${pointsPerRecharge}\n` +
+        `📊 Pontos mínimos: ${minPoints}\n` +
+        `✖️ Multiplicador: ${multiplier}\n\n` +
+        `Use os botões:`;
 
     await sendMenu(chatId, msg, getAdminAffiliatesButtons());
 }
 
 async function showUsersConfig(chatId) {
     const registrationBonus = await getSetting('registration_bonus', '0.00');
-    const msg = `👤 *CONFIGURAR USUÁRIOS*\n\n` +
-                `🎁 Bônus de registro: R$ ${registrationBonus}\n\n` +
-                `Use os botões:`;
+    const msg = `👤 *CONFIGURAR USUÁRIOS*\n\n🎁 Bônus de registro: R$ ${registrationBonus}\n\nUse os botões:`;
     await sendMenu(chatId, msg, getAdminUsersButtons());
 }
 
@@ -547,13 +619,13 @@ async function showPixConfig(chatId) {
     const bonusMin = await getSetting('pix_bonus_min', '0.00');
 
     const msg = `💠 *CONFIGURAR PIX*\n\n` +
-                `🔑 Token: ${token ? token.substring(0, 15) + '...' : 'Não configurado'}\n` +
-                `⬇️ Depósito mín: R$ ${minDep}\n` +
-                `⬆️ Depósito máx: R$ ${maxDep}\n` +
-                `⏰ Expiração: ${expiration} min\n` +
-                `🎁 Bônus: ${bonus}%\n` +
-                `📊 Min p/ bônus: R$ ${bonusMin}\n\n` +
-                `Use os botões:`;
+        `🔑 Token: ${token ? token.substring(0, 15) + '...' : 'Não configurado'}\n` +
+        `⬇️ Depósito mín: R$ ${minDep}\n` +
+        `⬆️ Depósito máx: R$ ${maxDep}\n` +
+        `⏰ Expiração: ${expiration} min\n` +
+        `🎁 Bônus: ${bonus}%\n` +
+        `📊 Min p/ bônus: R$ ${bonusMin}\n\n` +
+        `Use os botões:`;
 
     await sendMenu(chatId, msg, getAdminPixButtons());
 }
@@ -569,6 +641,20 @@ async function showSearchConfig(chatId) {
     const images = db.prepare('SELECT COUNT(*) as total FROM service_images').get().total;
     const msg = `🔍 *CONFIGURAR PESQUISA DE SERVIÇOS*\n\n🖼️ Imagens salvas: ${images}\n\nUse os botões:`;
     await sendMenu(chatId, msg, getAdminSearchButtons());
+}
+
+async function showProfile(chatId, user) {
+    const purchasesCount = Transaction.countToday();
+    const msg = `👤 *SEU PERFIL*\n\n` +
+        `📞 Número: ${user.phone || 'N/A'}\n` +
+        `💰 Saldo: R$ ${parseFloat(user.balance || 0).toFixed(2)}\n` +
+        `⭐ Pontos: ${user.referral_points || 0}\n` +
+        `👥 Indicados: ${user.total_referrals || 0}\n` +
+        `🛒 Compras hoje: ${purchasesCount}\n` +
+        `👑 Admin: ${user.is_admin ? 'Sim' : 'Não'}\n` +
+        `👤 Dono: ${user.is_owner ? 'Sim' : 'Não'}`;
+
+    await sendMenu(chatId, msg, [['🏠 MENU INICIAL']]);
 }
 
 async function handleCallbackQuery(bot, query) {
