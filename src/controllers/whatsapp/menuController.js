@@ -9,6 +9,7 @@ const { handleRentBotMenu } = require('./rentController');
 const { handleSearchService, processSearchQuery } = require('./searchController');
 const { handleGiftCardMenu, handleGiftCardPurchase, handleCustomGiftCardValue, handleConfirmGiftCard, handleRedeemGiftCard, handleMyGiftCards } = require('./giftcardController');
 const { handleVipMenu, handleVipPurchase, handleConfirmVip } = require('./vipController');
+const { handleHistoryMenu, handleFullHistory } = require('./historyController');
 const logger = require('../../utils/logger');
 
 async function handleMessage(sock, message) {
@@ -26,26 +27,22 @@ async function handleMessage(sock, message) {
             return;
         }
 
-        // Resgatar Gift Card (código GIFT-XXXX)
         if (messageText && messageText.toUpperCase().startsWith('GIFT-')) {
             await handleRedeemGiftCard(phone, user, messageText);
             return;
         }
 
-        // Código de indicação
         if (messageText && messageText.toUpperCase().startsWith('BONUS_COD_')) {
             await processReferralCode(phone, messageText, user);
             await showMainMenu(phone, user);
             return;
         }
 
-        // Botões
         if (messageType === 'buttons_response') {
             await handleButtonClick(phone, messageText, user);
             return;
         }
 
-        // Aguardando input
         if (messageText && !messageText.startsWith('/')) {
             const waiting = global.waitingFor || {};
 
@@ -102,8 +99,6 @@ async function showMainMenu(phone, user) {
         const referralLink = `https://t.me/DoguinhaStoreBot?start=${user.referral_code}`;
         const referralCount = user.total_referrals || 0;
         const referralPoints = user.referral_points || 0;
-
-        // Verificar VIP
         const { isVip } = require('./vipController');
         const vipStatus = isVip(phone);
 
@@ -126,6 +121,7 @@ async function showMainMenu(phone, user) {
             { id: 'giftcard_menu', text: '🎁 GIFT CARDS' },
             { id: 'vip_menu', text: '👑 VIP' },
             { id: 'referral', text: '💼 ÁREA DO ASSOCIADO' },
+            { id: 'history', text: '📋 HISTÓRICO' },
             { id: 'support', text: '📞 SUPORTE' },
             { id: 'rent_bot', text: '🤖 ALUGAR BOT' },
             { id: 'search_service', text: '🔍 PESQUISAR SERVIÇO' }
@@ -139,58 +135,34 @@ async function showMainMenu(phone, user) {
 
 async function handleButtonClick(phone, buttonId, user) {
     switch (buttonId) {
-        case 'profile':
-            return await showProfile(phone, user);
-        case 'add_balance':
-            return await handlePaymentMenu(phone, user);
-        case 'premium':
-            return await handlePremiumMenu(phone, user);
-        case 'giftcard_menu':
-            return await handleGiftCardMenu(phone, user);
-        case 'my_giftcards':
-            return await handleMyGiftCards(phone, user);
-        case 'vip_menu':
-            return await handleVipMenu(phone, user);
-        case 'referral':
-            return await handleReferralMenu(phone, user);
-        case 'support':
-            return await handleSupportMenu(phone, user);
-        case 'rent_bot':
-            return await handleRentBotMenu(phone, user);
-        case 'search_service':
-            return await handleSearchService(phone, user);
-        case 'main_menu':
-            return await showMainMenu(phone, user);
-        case 'text_model':
-            return await sendReferralTextModel(phone, user);
+        case 'profile': return await showProfile(phone, user);
+        case 'add_balance': return await handlePaymentMenu(phone, user);
+        case 'premium': return await handlePremiumMenu(phone, user);
+        case 'giftcard_menu': return await handleGiftCardMenu(phone, user);
+        case 'my_giftcards': return await handleMyGiftCards(phone, user);
+        case 'vip_menu': return await handleVipMenu(phone, user);
+        case 'referral': return await handleReferralMenu(phone, user);
+        case 'history': return await handleHistoryMenu(phone, user);
+        case 'history_full': return await handleFullHistory(phone, user);
+        case 'support': return await handleSupportMenu(phone, user);
+        case 'rent_bot': return await handleRentBotMenu(phone, user);
+        case 'search_service': return await handleSearchService(phone, user);
+        case 'main_menu': return await showMainMenu(phone, user);
+        case 'text_model': return await sendReferralTextModel(phone, user);
         default:
-            // PIX
-            if (buttonId.startsWith('pix_')) {
-                return await handlePaymentMenu(phone, user, buttonId);
-            }
-            // Produtos
-            if (buttonId.startsWith('buy_')) {
-                return await handleProductPurchase(phone, user, buttonId);
-            }
-            if (buttonId.startsWith('confirm_buy_')) {
-                return await handleConfirmPurchase(phone, user, buttonId);
-            }
+            if (buttonId.startsWith('pix_')) return await handlePaymentMenu(phone, user, buttonId);
+            if (buttonId.startsWith('buy_')) return await handleProductPurchase(phone, user, buttonId);
+            if (buttonId.startsWith('confirm_buy_')) return await handleConfirmPurchase(phone, user, buttonId);
             if (buttonId.startsWith('premium_page_')) {
                 const page = parseInt(buttonId.replace('premium_page_', ''));
                 return await handlePremiumMenu(phone, user, page);
             }
-            // Gift Cards
-            if (buttonId.startsWith('giftcard_')) {
-                return await handleGiftCardPurchase(phone, user, buttonId);
-            }
+            if (buttonId.startsWith('giftcard_')) return await handleGiftCardPurchase(phone, user, buttonId);
             if (buttonId.startsWith('confirm_giftcard_')) {
                 const amount = parseFloat(buttonId.replace('confirm_giftcard_', ''));
                 return await handleConfirmGiftCard(phone, user, amount);
             }
-            // VIP
-            if (buttonId.startsWith('vip_')) {
-                return await handleVipPurchase(phone, user, buttonId);
-            }
+            if (buttonId.startsWith('vip_')) return await handleVipPurchase(phone, user, buttonId);
             if (buttonId.startsWith('confirm_vip_')) {
                 const planType = buttonId.replace('confirm_', '');
                 return await handleConfirmVip(phone, user, planType);
@@ -223,6 +195,7 @@ async function showProfile(phone, user) {
 
         const buttons = [
             { id: 'add_balance', text: '💰 ADICIONAR SALDO' },
+            { id: 'history', text: '📋 HISTÓRICO' },
             { id: 'vip_menu', text: '👑 VIP' },
             { id: 'my_giftcards', text: '🎁 MEUS GIFT CARDS' },
             { id: 'main_menu', text: '🏠 MENU INICIAL' }
