@@ -3,49 +3,20 @@ const { sendTextMessage } = require('../services/whatsapp');
 const logger = require('../utils/logger');
 
 async function requireAdmin(phone) {
-    try {
-        const isAdmin = User.isAdmin(phone);
-        if (!isAdmin) {
-            await sendTextMessage(phone, '⛔ Acesso negado!');
-            return false;
-        }
-        return true;
-    } catch (error) {
-        logger.error('❌ Erro na autenticação:', error);
-        return false;
-    }
+    const isAdmin = User.isAdmin(phone);
+    if (!isAdmin) { await sendTextMessage(phone, '⛔ Acesso negado!'); return false; }
+    return true;
 }
 
 async function requireUser(phone) {
-    try {
-        const user = User.findByPhone(phone);
-        if (!user) {
-            User.createOrUpdate(phone);
-            return User.findByPhone(phone);
-        }
-        return user;
-    } catch (error) {
-        logger.error('❌ Erro ao verificar usuário:', error);
-        return null;
-    }
+    let user = User.findByPhone(phone);
+    if (!user) { User.createOrUpdate(phone); user = User.findByPhone(phone); }
+    return user;
 }
 
 async function requireNotBlocked(phone) {
-    try {
-        const isBlocked = User.isBlocked(phone);
-        if (isBlocked) {
-            await sendTextMessage(phone, '⛔ Você está bloqueado!');
-            return false;
-        }
-        return true;
-    } catch (error) {
-        logger.error('❌ Erro ao verificar bloqueio:', error);
-        return false;
-    }
+    if (User.isBlocked(phone)) { await sendTextMessage(phone, '⛔ Você está bloqueado!'); return false; }
+    return true;
 }
 
-module.exports = {
-    requireAdmin,
-    requireUser,
-    requireNotBlocked
-};
+module.exports = { requireAdmin, requireUser, requireNotBlocked };
