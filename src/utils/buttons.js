@@ -20,25 +20,14 @@ async function getPaymentButtons() {
 
 function getProductButtons(products, currentPage, totalPages) {
     const buttons = [];
-
     for (const product of products) {
-        buttons.push({
-            id: `buy_${product.id}`,
-            text: `${product.name} - R$ ${parseFloat(product.value).toFixed(2)}`
-        });
+        buttons.push({ id: `buy_${product.id}`, text: `${product.name} - R$ ${parseFloat(product.value).toFixed(2)}` });
     }
-
     if (totalPages > 1) {
-        if (currentPage < totalPages) {
-            buttons.push({ id: `premium_page_${currentPage + 1}`, text: '➡️ Exibir Mais' });
-        }
-        if (currentPage > 1) {
-            buttons.push({ id: `premium_page_${currentPage - 1}`, text: '⬅️ Voltar' });
-        }
+        if (currentPage < totalPages) buttons.push({ id: `premium_page_${currentPage + 1}`, text: '➡️ Exibir Mais' });
+        if (currentPage > 1) buttons.push({ id: `premium_page_${currentPage - 1}`, text: '⬅️ Voltar' });
     }
-
     buttons.push({ id: 'main_menu', text: '🏠 Menu Inicial' });
-
     return buttons;
 }
 
@@ -57,130 +46,54 @@ function getReferralButtons() {
 }
 
 function getBackButton() {
-    return [
-        { id: 'main_menu', text: '🏠 Menu Inicial' }
-    ];
+    return [{ id: 'main_menu', text: '🏠 Menu Inicial' }];
 }
 
 function getAdminDashboardButtons() {
-    return [
-        ['⚙️ CONFIGURAÇÕES', '⚡ AÇÕES'],
-        ['💳 TRANSAÇÕES', '🔄 ATUALIZAÇÕES']
-    ];
+    return [['⚙️ CONFIGURAÇÕES', '⚡ AÇÕES'], ['💳 TRANSAÇÕES', '🔄 ATUALIZAÇÕES']];
 }
 
 function getAdminConfigButtons() {
-    return [
-        ['📝 CONFIGURAÇÕES GERAIS', '👥 CONFIGURAR ADMINS'],
-        ['🔗 CONFIGURAR AFILIADOS', '👤 CONFIGURAR USUÁRIOS'],
-        ['💠 CONFIGURAR PIX', '🔐 CONFIGURAR LOGINS'],
-        ['🔍 CONFIGURAR PESQUISA DE SERVIÇOS'],
-        ['🔙 VOLTAR']
-    ];
+    return [['📝 CONFIGURAÇÕES GERAIS', '👥 CONFIGURAR ADMINS'], ['🔗 CONFIGURAR AFILIADOS', '👤 CONFIGURAR USUÁRIOS'], ['💠 CONFIGURAR PIX', '🔐 CONFIGURAR LOGINS'], ['🔍 CONFIGURAR PESQUISA DE SERVIÇOS'], ['🔙 VOLTAR']];
 }
 
 function getAdminGeneralConfigButtons() {
-    return [
-        ['📞 MUDAR SUPORTE', '🔣 MUDAR SEPARADOR'],
-        ['📋 MUDAR DESTINO LOG'],
-        ['🔄 RENOVAR PLANO', '🔁 REINICIAR BOT'],
-        ['🛑 MANUTENÇÃO', '🔙 VOLTAR']
-    ];
+    return [['📞 MUDAR SUPORTE', '🔣 MUDAR SEPARADOR'], ['📋 MUDAR DESTINO LOG'], ['🔄 RENOVAR PLANO', '🔁 REINICIAR BOT'], ['🛑 MANUTENÇÃO', '🔙 VOLTAR']];
 }
 
 function getAdminAdminsButtons() {
-    return [
-        ['➕ ADICIONAR ADM', '➖ REMOVER ADM'],
-        ['📋 LISTA DE ADM', '🔙 VOLTAR']
-    ];
+    return [['➕ ADICIONAR ADM', '➖ REMOVER ADM'], ['📋 LISTA DE ADM', '🔙 VOLTAR']];
 }
 
 function getAdminAffiliatesButtons() {
-    return [
-        ['🔄 SISTEMA DE INDICAÇÃO'],
-        ['⭐ PONTOS POR RECARGA'],
-        ['📊 PONTOS MINIMO PARA CONVERTER'],
-        ['✖️ MULTIPLICADOR PARA CONVERTER'],
-        ['🔙 VOLTAR']
-    ];
+    return [['🔄 SISTEMA DE INDICAÇÃO'], ['⭐ PONTOS POR RECARGA'], ['📊 PONTOS MINIMO PARA CONVERTER'], ['✖️ MULTIPLICADOR PARA CONVERTER'], ['🔙 VOLTAR']];
 }
 
 function getAdminUsersButtons() {
-    return [
-        ['📢 TRANSMITIR A TODOS'],
-        ['🔍 PESQUISAR USUÁRIO'],
-        ['🎁 BÔNUS DE REGISTRO'],
-        ['🔙 VOLTAR']
-    ];
+    return [['📢 TRANSMITIR A TODOS'], ['🔍 PESQUISAR USUÁRIO'], ['🎁 BÔNUS DE REGISTRO'], ['🔙 VOLTAR']];
 }
 
 function getAdminPixButtons() {
-    return [
-        ['🔄 PIX MANUAL', '🤖 PIX AUTOMÁTICO'],
-        ['🔑 MUDAR TOKEN'],
-        ['⬇️ MUDAR DEPÓSITO MIN', '⬆️ MUDAR DEPÓSITO MAX'],
-        ['⏰ MUDAR TEMPO DE EXPIRAÇÃO'],
-        ['🎁 MUDAR BÔNUS', '📊 MUDAR MIN PARA BÔNUS'],
-        ['🔙 VOLTAR']
-    ];
+    return [['🔄 PIX MANUAL', '🤖 PIX AUTOMÁTICO'], ['🔑 MUDAR CHAVE PIX MANUAL', '👤 MUDAR NOME TITULAR PIX'], ['🔑 MUDAR TOKEN'], ['⬇️ MUDAR DEPÓSITO MIN', '⬆️ MUDAR DEPÓSITO MAX'], ['⏰ MUDAR TEMPO DE EXPIRAÇÃO'], ['🎁 MUDAR BÔNUS', '📊 MUDAR MIN PARA BÔNUS'], ['🔙 VOLTAR']];
 }
 
 function getAdminLoginsButtons() {
-    return [
-        ['➕ ADICIONAR LOGIN'],
-        ['➖ REMOVER LOGIN'],
-        ['🗑️ REMOVER POR PLATAFORMA'],
-        ['📦 ESTOQUE DETALHADO'],
-        ['💣 ZERAR ESTOQUE'],
-        ['💰 MUDAR VALOR DO SERVIÇO'],
-        ['💎 MUDAR VALOR DE TODOS'],
-        ['🔙 VOLTAR']
-    ];
+    return [['➕ ADICIONAR LOGIN'], ['➖ REMOVER LOGIN'], ['🗑️ REMOVER POR PLATAFORMA'], ['📦 ESTOQUE DETALHADO'], ['💣 ZERAR ESTOQUE'], ['💰 MUDAR VALOR DO SERVIÇO'], ['💎 MUDAR VALOR DE TODOS'], ['🔙 VOLTAR']];
 }
 
 function getAdminSearchButtons() {
-    return [
-        ['🖼️ ADICIONAR IMAGEM'],
-        ['🗑️ REMOVER IMAGEM'],
-        ['🔙 VOLTAR']
-    ];
+    return [['🖼️ ADICIONAR IMAGEM'], ['🗑️ REMOVER IMAGEM'], ['🔙 VOLTAR']];
 }
 
-function getAdminActionsButtons() {
-    return [
-        ['🔙 VOLTAR']
-    ];
-}
-
-function getAdminTransactionsButtons() {
-    return [
-        ['🔙 VOLTAR']
-    ];
-}
-
-function getAdminUpdatesButtons() {
-    return [
-        ['🔙 VOLTAR']
-    ];
-}
+function getAdminActionsButtons() { return [['🔙 VOLTAR']]; }
+function getAdminTransactionsButtons() { return [['🔙 VOLTAR']]; }
+function getAdminUpdatesButtons() { return [['🔙 VOLTAR']]; }
 
 module.exports = {
-    getMainMenuButtons,
-    getPaymentButtons,
-    getProductButtons,
-    getConfirmCancelButtons,
-    getReferralButtons,
-    getBackButton,
-    getAdminDashboardButtons,
-    getAdminConfigButtons,
-    getAdminGeneralConfigButtons,
-    getAdminAdminsButtons,
-    getAdminAffiliatesButtons,
-    getAdminUsersButtons,
-    getAdminPixButtons,
-    getAdminLoginsButtons,
-    getAdminSearchButtons,
-    getAdminActionsButtons,
-    getAdminTransactionsButtons,
-    getAdminUpdatesButtons
+    getMainMenuButtons, getPaymentButtons, getProductButtons,
+    getConfirmCancelButtons, getReferralButtons, getBackButton,
+    getAdminDashboardButtons, getAdminConfigButtons, getAdminGeneralConfigButtons,
+    getAdminAdminsButtons, getAdminAffiliatesButtons, getAdminUsersButtons,
+    getAdminPixButtons, getAdminLoginsButtons, getAdminSearchButtons,
+    getAdminActionsButtons, getAdminTransactionsButtons, getAdminUpdatesButtons
 };
