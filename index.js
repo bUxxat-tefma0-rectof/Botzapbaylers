@@ -1,7 +1,3 @@
-// ============================================
-// DOGUINHA STORE - ARQUIVO PRINCIPAL
-// ============================================
-
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -10,9 +6,6 @@ const { startWhatsApp } = require('./src/services/whatsapp');
 const { startTelegram } = require('./src/services/telegram');
 const logger = require('./src/utils/logger');
 
-// ============================================
-// SERVIDOR EXPRESS
-// ============================================
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -20,20 +13,10 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ============================================
-// ROTA PRINCIPAL
-// ============================================
 app.get('/', (req, res) => {
-    res.json({
-        status: 'online',
-        bot: 'DOGUINHA STORE',
-        version: '1.0.0'
-    });
+    res.json({ status: 'online', bot: 'DOGUINHA STORE', version: '1.0.0' });
 });
 
-// ============================================
-// WEBHOOK MERCADO PAGO
-// ============================================
 app.post('/webhook/mercadopago', async (req, res) => {
     try {
         const { processWebhook } = require('./src/services/mercadopago');
@@ -45,18 +28,13 @@ app.post('/webhook/mercadopago', async (req, res) => {
     }
 });
 
-// ============================================
-// INICIAR TUDO
-// ============================================
 async function startServer() {
     try {
         logger.info('🔄 Conectando banco de dados...');
         await connectDatabase();
         await initializeDatabase();
 
-        app.listen(PORT, () => {
-            logger.info(`🌐 Servidor rodando na porta ${PORT}`);
-        });
+        app.listen(PORT, () => logger.info(`🌐 Servidor rodando na porta ${PORT}`));
 
         logger.info('🤖 Iniciando WhatsApp...');
         await startWhatsApp();
@@ -65,24 +43,13 @@ async function startServer() {
         await startTelegram();
 
         logger.info('✅ TUDO INICIADO COM SUCESSO!');
-
     } catch (error) {
         logger.error('❌ Erro ao iniciar:', error);
         process.exit(1);
     }
 }
 
-// ============================================
-// TRATAMENTO DE ERROS
-// ============================================
-process.on('uncaughtException', (error) => {
-    logger.error('❌ Erro não tratado:', error);
-});
-
-process.on('unhandledRejection', (error) => {
-    logger.error('❌ Promise rejeitada:', error);
-});
+process.on('uncaughtException', (error) => logger.error('❌ Erro:', error));
+process.on('unhandledRejection', (error) => logger.error('❌ Promise:', error));
 
 startServer();
-
-module.exports = app;
