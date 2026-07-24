@@ -8,61 +8,30 @@ let bot = null;
 async function startTelegram() {
     try {
         const token = config.telegram.adminToken;
-        if (!token) {
-            logger.error('❌ Token do Telegram não configurado');
-            return;
-        }
-
+        if (!token) { logger.error('❌ Token não configurado'); return; }
         bot = new TelegramBot(token, { polling: true });
 
         bot.on('message', async (msg) => {
-            try {
-                await handleAdminMessage(bot, msg);
-            } catch (error) {
-                logger.error('❌ Erro ao processar mensagem Telegram:', error);
-            }
+            try { await handleAdminMessage(bot, msg); } catch (error) { logger.error('❌ Erro:', error); }
         });
 
         bot.on('callback_query', async (query) => {
             try {
                 const { handleCallbackQuery } = require('../controllers/telegram/adminController');
                 await handleCallbackQuery(bot, query);
-            } catch (error) {
-                logger.error('❌ Erro no callback:', error);
-            }
+            } catch (error) { logger.error('❌ Erro:', error); }
         });
 
         logger.info('✅ Telegram Admin conectado!');
         return bot;
-
-    } catch (error) {
-        logger.error('❌ Erro ao iniciar Telegram:', error);
-    }
+    } catch (error) { logger.error('❌ Erro:', error); }
 }
 
-function getBot() {
-    return bot;
-}
-
-function sendMessage(chatId, text, options = {}) {
-    if (!bot) return;
-    return bot.sendMessage(chatId, text, options);
-}
-
+function getBot() { return bot; }
+function sendMessage(chatId, text, options = {}) { if (!bot) return; return bot.sendMessage(chatId, text, options); }
 function sendMenu(chatId, text, buttons) {
     if (!bot) return;
-    return bot.sendMessage(chatId, text, {
-        reply_markup: {
-            keyboard: buttons,
-            resize_keyboard: true,
-            one_time_keyboard: false
-        }
-    });
+    return bot.sendMessage(chatId, text, { reply_markup: { keyboard: buttons, resize_keyboard: true, one_time_keyboard: false }, parse_mode: 'Markdown' });
 }
 
-module.exports = {
-    startTelegram,
-    getBot,
-    sendMessage,
-    sendMenu
-};
+module.exports = { startTelegram, getBot, sendMessage, sendMenu };
