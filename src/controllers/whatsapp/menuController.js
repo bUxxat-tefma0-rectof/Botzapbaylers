@@ -10,6 +10,7 @@ const { handleSearchService, processSearchQuery } = require('./searchController'
 const { handleGiftCardMenu, handleGiftCardPurchase, handleCustomGiftCardValue, handleConfirmGiftCard, handleRedeemGiftCard, handleMyGiftCards } = require('./giftcardController');
 const { handleVipMenu, handleVipPurchase, handleConfirmVip } = require('./vipController');
 const { handleHistoryMenu, handleFullHistory } = require('./historyController');
+const { handleConvertPoints, handleConfirmConvertPoints, handleCheckPoints } = require('./pointsController');
 const logger = require('../../utils/logger');
 
 async function handleMessage(sock, message) {
@@ -47,22 +48,17 @@ async function handleMessage(sock, message) {
             const waiting = global.waitingFor || {};
 
             if (waiting[phone] === 'custom_pix_value') {
-                delete waiting[phone];
-                global.waitingFor = waiting;
+                delete waiting[phone]; global.waitingFor = waiting;
                 await handleCustomPixValue(phone, user, messageText);
                 return;
             }
-
             if (waiting[phone] === 'search_service_query') {
-                delete waiting[phone];
-                global.waitingFor = waiting;
+                delete waiting[phone]; global.waitingFor = waiting;
                 await processSearchQuery(phone, user, messageText);
                 return;
             }
-
             if (waiting[phone] === 'giftcard_custom_value') {
-                delete waiting[phone];
-                global.waitingFor = waiting;
+                delete waiting[phone]; global.waitingFor = waiting;
                 await handleCustomGiftCardValue(phone, user, messageText);
                 return;
             }
@@ -85,9 +81,7 @@ function getMessageType(message) {
 function getMessageText(message) {
     if (message.message?.conversation) return message.message.conversation;
     if (message.message?.extendedTextMessage?.text) return message.message.extendedTextMessage.text;
-    if (message.message?.buttonsResponseMessage?.selectedButtonId) {
-        return message.message.buttonsResponseMessage.selectedButtonId;
-    }
+    if (message.message?.buttonsResponseMessage?.selectedButtonId) return message.message.buttonsResponseMessage.selectedButtonId;
     return null;
 }
 
@@ -142,6 +136,8 @@ async function handleButtonClick(phone, buttonId, user) {
         case 'my_giftcards': return await handleMyGiftCards(phone, user);
         case 'vip_menu': return await handleVipMenu(phone, user);
         case 'referral': return await handleReferralMenu(phone, user);
+        case 'check_points': return await handleCheckPoints(phone, user);
+        case 'convert_points': return await handleConvertPoints(phone, user);
         case 'history': return await handleHistoryMenu(phone, user);
         case 'history_full': return await handleFullHistory(phone, user);
         case 'support': return await handleSupportMenu(phone, user);
@@ -161,6 +157,10 @@ async function handleButtonClick(phone, buttonId, user) {
             if (buttonId.startsWith('confirm_giftcard_')) {
                 const amount = parseFloat(buttonId.replace('confirm_giftcard_', ''));
                 return await handleConfirmGiftCard(phone, user, amount);
+            }
+            if (buttonId.startsWith('confirm_convert_')) {
+                const points = parseInt(buttonId.replace('confirm_convert_', ''));
+                return await handleConfirmConvertPoints(phone, user, points);
             }
             if (buttonId.startsWith('vip_')) return await handleVipPurchase(phone, user, buttonId);
             if (buttonId.startsWith('confirm_vip_')) {
@@ -196,6 +196,8 @@ async function showProfile(phone, user) {
         const buttons = [
             { id: 'add_balance', text: '💰 ADICIONAR SALDO' },
             { id: 'history', text: '📋 HISTÓRICO' },
+            { id: 'check_points', text: '⭐ VER PONTOS' },
+            { id: 'convert_points', text: '💰 CONVERTER PONTOS' },
             { id: 'vip_menu', text: '👑 VIP' },
             { id: 'my_giftcards', text: '🎁 MEUS GIFT CARDS' },
             { id: 'main_menu', text: '🏠 MENU INICIAL' }
