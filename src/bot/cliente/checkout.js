@@ -98,4 +98,93 @@ class CheckoutService {
         for (const item of carrinho.itens) {
             const produto = db.prepare('SELECT estoque, nome FROM produtos WHERE id = ?').get(item.produto_id);
             if (!produto || produto.estoque < item.quantidade) {
-                return { sucesso: false, mensagem: `Estoque insufic
+                return { sucesso: false, mensagem: `Estoque insuficiente para: ${produto?.nome || 'Produto'}` };
+            }
+        }
+        
+        const calculo = await CarrinhoService.calcularTotal(userId, dados.enderecoId);
+        const numeroPedido = gerarNumeroPedido();
+        
+        let desconto = 0;
+        let cupomCodigo = null;
+        
+        // Aplica cupom se existir
+        if (dados.cupom) {
+            const resultadoCupom = await this.aplicarCupom(userId, dados.cupom);
+            if (resultadoCupom.sucesso) {
+                desconto = resultadoCupom.desconto;
+                cupomCodigo = resultadoCupom.cupom;
+            }
+        }
+        
+        const totalFinal = calculo.total - desconto;
+        
+        // Gera pagamento PIX
+        let pagamentoResult;
+        if (metodoPagamento === 'pix') {
+            const descricao = carrinho.itens.map(i => `${i.quantidade}x ${i.nome}`).join(', ').substring(0, 100);
+            pagamentoResult = await pagamentoService.gerarPix(totalFinal, descricao, numeroPedido);
+            
+            if (!pagamentoResult.sucesso) {
+                return { sucesso: false, mensagem: 'Erro ao gerar PIX. Tente novamente.' };
+            }
+        }
+        
+        // Salva pedido
+        try {
+            const pedido = db.prepare(`INSERT INTO pedidos 
+                (numero, cliente_id, endereco_id, tipo_entrega, status, subtotal, taxa_entrega, desconto, total, cupom, comentario, pagamento_metodo, pagamento_id, pagamento_qrcode, pagamento_status)
+                VALUES (?, ?, ?, ?, 'recebido', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendente')`)
+            .run(
+                numeroPedido, cliente.id, dados.enderecoId || null, dados.tipoEntrega || 'entrega',
+                calculo.subtotal, calculo.taxaEntrega, desconto, totalFinal,
+                cupomCodigo, dados.comentario || null,
+                metodoPagamento, pagamentoResult?.payment_id || null,
+                pagamentoResult?.copia_cola || null
+            );
+            
+            // Salva itens
+            for (const item of carrinho.itens) {
+                const preco = item.preco_promocional || item.preco;
+                db.prepare('INSERT INTO itens_pedido (pedido_id, produto_nome, marca, quantidade, preco_unitario, comentario) VALUES (?, ?, ?, ?, ?, ?)')
+                .run(pedido.lastInsertRowid, item.nome, item.marca, item.quantidade, preco, item.comentario);
+                
+                // Atualiza estoque
+                db.prepare('UPDATE produtos SET estoque = estoque - ? WHERE id = ?').run(item.quantidade, item.produto_id);
+            }
+            
+            // Atualiza uso do cupom
+            if (cupomCodigo) {
+                db.prepare('UPDATE cupons SET uso_atual = uso_atual + 1 WHERE codigo = ?').run(cupomCodigo);
+            }
+            
+            // Limpa carrinho
+            await CarrinhoService.limpar(userId);
+            
+            logger.info(`📦 Pedido ${numeroPedido} criado - R$ ${totalFinal}`);
+            
+            return {
+                sucesso: true,
+                pedidoId: pedido.lastInsertRowid,
+                numero: numeroPedido,
+                total: totalFinal,
+                pagamento: pagamentoResult
+            };
+            
+        } catch (error) {
+            logger.error('Erro ao finalizar pedido: ' + error.message);
+            return { sucesso: false, mensagem: 'Erro ao finalizar pedido.' };
+        }
+    }
+    
+    // Opções de falta de produto
+    static getOpcoesFalta() {
+        return [
+            { id: 'substituir', nome: '✅ Escolher outro semelhante' },
+            { id: 'nao_substituir', nome: '❌ Não substituir' },
+            { id: 'contato', nome: '📞 Entrar em contato' }
+        ];
+    }
+}
+
+module.exports = CheckoutService;
