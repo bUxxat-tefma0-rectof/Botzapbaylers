@@ -23,6 +23,7 @@ async function iniciarWhatsApp() {
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
         
+        // SALVA o QR Code quando ele aparece
         if (qr) {
             qrCodeString = qr;
             connectionStatus = 'qr_pendente';
