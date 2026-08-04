@@ -25,30 +25,20 @@ async function initDatabase() {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             telegram_id BIGINT UNIQUE NOT NULL,
             tipo TEXT DEFAULT 'PF',
-            nome TEXT,
-            sobrenome TEXT,
-            cpf TEXT UNIQUE,
-            cnpj TEXT UNIQUE,
-            razao_social TEXT,
-            nome_fantasia TEXT,
-            inscricao_estadual TEXT,
-            responsavel TEXT,
-            data_nascimento TEXT,
-            sexo TEXT,
-            telefone TEXT,
-            email TEXT,
-            senha TEXT,
-            telefone_verificado INTEGER DEFAULT 0,
-            codigo_whatsapp TEXT,
-            bloqueado INTEGER DEFAULT 0,
-            total_gasto REAL DEFAULT 0,
+            nome TEXT, sobrenome TEXT, cpf TEXT UNIQUE, cnpj TEXT UNIQUE,
+            razao_social TEXT, nome_fantasia TEXT, inscricao_estadual TEXT,
+            responsavel TEXT, data_nascimento TEXT, sexo TEXT,
+            telefone TEXT, email TEXT, senha TEXT,
+            telefone_verificado INTEGER DEFAULT 0, email_verificado INTEGER DEFAULT 0,
+            codigo_whatsapp TEXT, codigo_email TEXT,
+            bloqueado INTEGER DEFAULT 0, total_gasto REAL DEFAULT 0,
+            pontos_fidelidade INTEGER DEFAULT 0, etapa_cadastro TEXT DEFAULT 'inicio',
             data_cadastro DATETIME DEFAULT CURRENT_TIMESTAMP
         );
         
         CREATE TABLE IF NOT EXISTS enderecos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            cliente_id INTEGER NOT NULL,
-            apelido TEXT DEFAULT 'Principal',
+            cliente_id INTEGER NOT NULL, apelido TEXT DEFAULT 'Principal',
             cep TEXT, logradouro TEXT, numero TEXT, complemento TEXT,
             referencia TEXT, bairro TEXT, cidade TEXT, estado TEXT,
             latitude REAL, longitude REAL, principal INTEGER DEFAULT 0,
@@ -94,10 +84,9 @@ async function initDatabase() {
             status TEXT DEFAULT 'recebido',
             subtotal REAL, taxa_entrega REAL DEFAULT 0,
             desconto REAL DEFAULT 0, total REAL,
-            cupom TEXT, comentario TEXT,
+            cupom TEXT, comentario TEXT, opcao_falta TEXT DEFAULT 'substituir',
             pagamento_metodo TEXT, pagamento_id TEXT,
-            pagamento_status TEXT DEFAULT 'pendente',
-            pagamento_qrcode TEXT,
+            pagamento_status TEXT DEFAULT 'pendente', pagamento_qrcode TEXT,
             data_pedido DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (cliente_id) REFERENCES clientes(id)
         );
@@ -105,8 +94,7 @@ async function initDatabase() {
         CREATE TABLE IF NOT EXISTS itens_pedido (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             pedido_id INTEGER, produto_nome TEXT, marca TEXT,
-            quantidade INTEGER DEFAULT 1, preco_unitario REAL,
-            comentario TEXT,
+            quantidade INTEGER DEFAULT 1, preco_unitario REAL, comentario TEXT,
             FOREIGN KEY (pedido_id) REFERENCES pedidos(id)
         );
         
@@ -121,7 +109,8 @@ async function initDatabase() {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nome TEXT NOT NULL, tipo TEXT, valor REAL,
             categoria_id INTEGER, produto_id INTEGER,
-            bairro TEXT, ativo INTEGER DEFAULT 1
+            bairro TEXT, horario_inicio TEXT, horario_fim TEXT,
+            ativo INTEGER DEFAULT 1, data_inicio DATETIME, data_fim DATETIME
         );
         
         CREATE TABLE IF NOT EXISTS horarios_entrega (
@@ -129,12 +118,31 @@ async function initDatabase() {
             dia_semana INTEGER, horario TEXT, disponivel INTEGER DEFAULT 1
         );
         
+        CREATE TABLE IF NOT EXISTS avaliacoes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pedido_id INTEGER, cliente_id INTEGER,
+            nota INTEGER CHECK(nota >= 1 AND nota <= 5), comentario TEXT,
+            data DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        
         CREATE TABLE IF NOT EXISTS configs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             chave TEXT UNIQUE NOT NULL, valor TEXT
         );
+        
+        CREATE TABLE IF NOT EXISTS logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id BIGINT, acao TEXT, detalhes TEXT,
+            data DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        CREATE TABLE IF NOT EXISTS alertas_disponibilidade (
+            cliente_id INTEGER, produto_id INTEGER,
+            PRIMARY KEY (cliente_id, produto_id)
+        );
     `);
     
+    // Insere dados padrão se vazio
     const cats = db.prepare('SELECT COUNT(*) as t FROM categorias').get();
     if (cats.t === 0) {
         const insertCat = db.prepare("INSERT INTO categorias (nome, emoji, ordem) VALUES (?,?,?)");
@@ -147,9 +155,18 @@ async function initDatabase() {
         insertCat.run('Padaria', '🍞', 7);
         insertCat.run('Laticínios', '🧀', 8);
         insertCat.run('Congelados', '❄️', 9);
+        insertCat.run('Pet Shop', '🐾', 10);
     }
     
-    logger.info('✅ Tabelas criadas');
+    const configs = db.prepare('SELECT COUNT(*) as t FROM configs').get();
+    if (configs.t === 0) {
+        db.prepare("INSERT INTO configs (chave, valor) VALUES ('nome_mercado', 'Supermercado Telegram')").run();
+        db.prepare("INSERT INTO configs (chave, valor) VALUES ('taxa_entrega_padrao', '8')").run();
+        db.prepare("INSERT INTO configs (chave, valor) VALUES ('pedido_minimo', '30')").run();
+        db.prepare("INSERT INTO configs (chave, valor) VALUES ('tempo_expiracao_pix', '30')").run();
+    }
+    
+    logger.info('✅ Banco de dados inicializado com todas as tabelas');
 }
 
 module.exports = { getDatabase, initDatabase };
