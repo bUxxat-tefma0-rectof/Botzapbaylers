@@ -67,4 +67,36 @@ class ProdutosAdmin {
         db.prepare(`UPDATE produtos SET ${campos.join(', ')} WHERE id = ?`).run(...valores);
         
         logger.info(`✏️ Produto ${produtoId} atualizado`);
-        return { sucesso:
+        return { sucesso: true, mensagem: 'Produto atualizado!' };
+    }
+    
+    // Excluir produto
+    static async excluir(produtoId) {
+        const db = getDatabase();
+        const produto = db.prepare('SELECT * FROM produtos WHERE id = ?').get(produtoId);
+        if (!produto) return { sucesso: false, mensagem: 'Produto não encontrado.' };
+        
+        // Remove de favoritos e carrinhos
+        db.prepare('DELETE FROM favoritos WHERE produto_id = ?').run(produtoId);
+        db.prepare('DELETE FROM carrinhos WHERE produto_id = ?').run(produtoId);
+        db.prepare('DELETE FROM produtos WHERE id = ?').run(produtoId);
+        
+        logger.info(`🗑 Produto excluído: ${produto.nome}`);
+        return { sucesso: true, mensagem: 'Produto excluído!' };
+    }
+    
+    // Atualizar estoque
+    static async atualizarEstoque(produtoId, quantidade) {
+        const db = getDatabase();
+        db.prepare('UPDATE produtos SET estoque = estoque + ? WHERE id = ?').run(quantidade, produtoId);
+        return { sucesso: true, mensagem: 'Estoque atualizado!' };
+    }
+    
+    // Produtos com estoque baixo
+    static async getEstoqueBaixo(limite = 10) {
+        const db = getDatabase();
+        return db.prepare('SELECT * FROM produtos WHERE estoque < ? AND disponivel = 1 ORDER BY estoque ASC').all(limite);
+    }
+}
+
+module.exports = ProdutosAdmin;
