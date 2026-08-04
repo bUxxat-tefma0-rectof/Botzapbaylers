@@ -4,28 +4,17 @@ const logger = require('../../utils/logger');
 
 class PedidosAdmin {
     
-    // Listar pedidos
     static async listar(filtro = 'todos', pagina = 1, limite = 20) {
         const db = getDatabase();
         let where = '';
         const params = [];
         
         switch (filtro) {
-            case 'pendentes':
-                where = "WHERE status IN ('recebido', 'confirmado', 'separando', 'embalando')";
-                break;
-            case 'entrega':
-                where = "WHERE status = 'entrega'";
-                break;
-            case 'entregues':
-                where = "WHERE status = 'entregue'";
-                break;
-            case 'cancelados':
-                where = "WHERE status IN ('cancelado', 'reembolsado')";
-                break;
-            case 'hoje':
-                where = "WHERE date(data_pedido) = date('now')";
-                break;
+            case 'pendentes': where = "WHERE status IN ('recebido', 'confirmado', 'separando', 'embalando')"; break;
+            case 'entrega': where = "WHERE status = 'entrega'"; break;
+            case 'entregues': where = "WHERE status = 'entregue'"; break;
+            case 'cancelados': where = "WHERE status IN ('cancelado', 'reembolsado')"; break;
+            case 'hoje': where = "WHERE date(data_pedido) = date('now')"; break;
         }
         
         const total = db.prepare(`SELECT COUNT(*) as t FROM pedidos ${where}`).get(...params).t;
@@ -33,10 +22,12 @@ class PedidosAdmin {
         
         const pedidos = db.prepare(`
             SELECT p.*, c.nome as cliente_nome, c.telefone as cliente_telefone,
-                   e.logradouro, e.numero, e.bairro, e.cidade
+                   e.logradouro, e.numero, e.bairro, e.cidade,
+                   ent.nome as entregador_nome
             FROM pedidos p
             JOIN clientes c ON p.cliente_id = c.id
             LEFT JOIN enderecos e ON p.endereco_id = e.id
+            LEFT JOIN entregadores ent ON p.entregador_id = ent.id
             ${where}
             ORDER BY p.data_pedido DESC
             LIMIT ? OFFSET ?
@@ -45,15 +36,16 @@ class PedidosAdmin {
         return { pedidos, total, pagina, totalPaginas: Math.ceil(total / limite) };
     }
     
-    // Detalhes do pedido
     static async detalhes(pedidoId) {
         const db = getDatabase();
         const pedido = db.prepare(`
             SELECT p.*, c.nome, c.telefone, c.cpf, c.email,
-                   e.logradouro, e.numero, e.complemento, e.referencia, e.bairro, e.cidade, e.estado, e.cep
+                   e.logradouro, e.numero, e.complemento, e.referencia, e.bairro, e.cidade, e.estado, e.cep,
+                   ent.nome as entregador_nome, ent.telefone as entregador_telefone, ent.veiculo
             FROM pedidos p
             JOIN clientes c ON p.cliente_id = c.id
             LEFT JOIN enderecos e ON p.endereco_id = e.id
+            LEFT JOIN entregadores ent ON p.entregador_id = ent.id
             WHERE p.id = ?
         `).get(pedidoId);
         
@@ -64,41 +56,20 @@ class PedidosAdmin {
         return { ...pedido, itens };
     }
     
-    // Alterar status
     static async alterarStatus(pedidoId, novoStatus) {
         const db = getDatabase();
-        const pedido = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedidoId);
-        if (!pedido) return { sucesso: false, mensagem: 'Pedido não encontrado.' };
-        
         const statusValidos = ['recebido', 'confirmado', 'separando', 'embalando', 'entrega', 'entregue', 'cancelado', 'reembolsado'];
         if (!statusValidos.includes(novoStatus)) return { sucesso: false, mensagem: 'Status inválido.' };
         
-        db.prepare('UPDATE pedidos SET status = ? WHERE id = ?').run(novoStatus, pedidoId);
+        if (novoStatus === 'entregue') {
+            db.prepare('UPDATE pedidos SET status = ?, data_entrega = datetime("now") WHERE id = ?').run(novoStatus, pedidoId);
+        } else {
+            db.prepare('UPDATE pedidos SET status = ? WHERE id = ?').run(novoStatus, pedidoId);
+        }
         
-        // Notificar cliente via Telegram
-        try {
-            const cliente = db.prepare('SELECT telegram_id FROM clientes WHERE id = ?').get(pedido.cliente_id);
-            if (cliente) {
-                const clientBot = require('../cliente/index').getBot();
-                const mensagens = {
-                    'confirmado': '✅ Seu pagamento foi aprovado! O pedido está sendo separado.',
-                    'separando': '📦 Seu pedido está sendo separado!',
-                    'embalando': '🎁 Seu pedido está sendo embalado!',
-                    'entrega': '🛵 Seu pedido saiu para entrega!',
-                    'entregue': '🏠 Pedido entregue! Bom apetite! 🛒',
-                    'cancelado': '❌ Seu pedido foi cancelado.'
-                };
-                if (mensagens[novoStatus] && clientBot) {
-                    await clientBot.sendMessage(cliente.telegram_id, mensagens[novoStatus]);
-                }
-            }
-        } catch (e) {}
-        
-        logger.info(`📋 Pedido ${pedido.numero}: ${novoStatus}`);
-        return { sucesso: true, mensagem: `Status atualizado para: ${novoStatus}` };
+        return { sucesso: true, mensagem: `Status: ${novoStatus}` };
     }
     
-    // Imprimir pedido (gerar texto formatado)
     static async imprimir(pedidoId) {
         const detalhes = await this.detalhes(pedidoId);
         if (!detalhes) return null;
@@ -109,6 +80,7 @@ class PedidosAdmin {
         texto += `👤 Cliente: ${detalhes.nome}\n`;
         texto += `📱 Tel: ${detalhes.telefone || 'N/A'}\n`;
         if (detalhes.logradouro) texto += `📍 ${detalhes.logradouro}, ${detalhes.numero} - ${detalhes.bairro}\n`;
+        if (detalhes.entregador_nome) texto += `🛵 Entregador: ${detalhes.entregador_nome}\n`;
         texto += `\n📋 *ITENS:*\n`;
         
         for (const item of detalhes.itens) {
