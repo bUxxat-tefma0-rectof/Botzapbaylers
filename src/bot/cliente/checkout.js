@@ -18,6 +18,12 @@ class CheckoutService {
         
         const enderecos = await EnderecoService.listarEnderecos(userId);
         const calculo = await CarrinhoService.calcularTotal(userId);
+        const metodosPagamento = await pagamentoService.getMetodosDisponiveis();
+        const opcoesFalta = [
+            { id: 'substituir', nome: '✅ Escolher outro semelhante' },
+            { id: 'nao_substituir', nome: '❌ Não substituir' },
+            { id: 'contato', nome: '📞 Entrar em contato' }
+        ];
         
         return {
             sucesso: true,
@@ -27,6 +33,8 @@ class CheckoutService {
             taxaEntrega: calculo.taxaEntrega,
             total: calculo.total,
             enderecos,
+            metodosPagamento,
+            opcoesFalta,
             pedidoMinimo: calculo.pedidoMinimo
         };
     }
@@ -49,12 +57,17 @@ class CheckoutService {
             return { sucesso: false, mensagem: 'Selecione um horário de entrega.' };
         }
         
-        return {
-            sucesso: true,
-            tipo,
-            enderecoId,
-            horario
-        };
+        if (tipo === 'retirada') {
+            const configs = db.prepare("SELECT valor FROM configs WHERE chave = 'endereco_mercado'").get();
+            return {
+                sucesso: true,
+                tipo,
+                enderecoRetirada: configs?.valor || 'Endereço não configurado',
+                mensagem: 'Retire seu pedido na loja!'
+            };
+        }
+        
+        return { sucesso: true, tipo, enderecoId, horario };
     }
     
     // Aplicar cupom
@@ -72,7 +85,7 @@ class CheckoutService {
         if (cupom.tipo === 'percentual') {
             desconto = carrinho.total * (cupom.valor / 100);
         } else {
-            desconto = cupom.valor;
+            desconto = Math.min(cupom.valor, carrinho.total);
         }
         
         return {
@@ -80,12 +93,12 @@ class CheckoutService {
             cupom: cupom.codigo,
             tipo: cupom.tipo,
             valor: cupom.valor,
-            desconto: Math.min(desconto, carrinho.total),
-            totalComDesconto: carrinho.total - Math.min(desconto, carrinho.total)
+            desconto: desconto,
+            totalComDesconto: carrinho.total - desconto
         };
     }
     
-    // Finalizar pedido e gerar pagamento
+    // Finalizar pedido
     static async finalizarPedido(userId, metodoPagamento, dados = {}) {
         const db = getDatabase();
         const cliente = db.prepare('SELECT * FROM clientes WHERE telegram_id = ?').get(userId);
@@ -98,7 +111,7 @@ class CheckoutService {
         for (const item of carrinho.itens) {
             const produto = db.prepare('SELECT estoque, nome FROM produtos WHERE id = ?').get(item.produto_id);
             if (!produto || produto.estoque < item.quantidade) {
-                return { sucesso: false, mensagem: `Estoque insuficiente para: ${produto?.nome || 'Produto'}` };
+                return { sucesso: false, mensagem: `Estoque insuficiente: ${produto?.nome || 'Produto'}` };
             }
         }
         
@@ -108,7 +121,6 @@ class CheckoutService {
         let desconto = 0;
         let cupomCodigo = null;
         
-        // Aplica cupom se existir
         if (dados.cupom) {
             const resultadoCupom = await this.aplicarCupom(userId, dados.cupom);
             if (resultadoCupom.sucesso) {
@@ -118,29 +130,72 @@ class CheckoutService {
         }
         
         const totalFinal = calculo.total - desconto;
+        const descricao = carrinho.itens.map(i => `${i.quantidade}x ${i.nome}`).join(', ').substring(0, 100);
         
-        // Gera pagamento PIX
         let pagamentoResult;
-        if (metodoPagamento === 'pix') {
-            const descricao = carrinho.itens.map(i => `${i.quantidade}x ${i.nome}`).join(', ').substring(0, 100);
-            pagamentoResult = await pagamentoService.gerarPix(totalFinal, descricao, numeroPedido);
-            
-            if (!pagamentoResult.sucesso) {
-                return { sucesso: false, mensagem: 'Erro ao gerar PIX. Tente novamente.' };
-            }
+        
+        // Processa pagamento conforme método escolhido
+        switch (metodoPagamento) {
+            case 'pix':
+                pagamentoResult = await pagamentoService.gerarPix(totalFinal, descricao, numeroPedido);
+                break;
+                
+            case 'credito':
+                if (!dados.tokenCartao) return { sucesso: false, mensagem: 'Token do cartão necessário.' };
+                const parcelas = dados.parcelas || 1;
+                pagamentoResult = await pagamentoService.gerarPagamentoCartao(
+                    totalFinal, dados.tokenCartao, parcelas, descricao, numeroPedido, dados
+                );
+                break;
+                
+            case 'debito':
+                if (!dados.tokenCartao) return { sucesso: false, mensagem: 'Token do cartão necessário.' };
+                pagamentoResult = await pagamentoService.gerarPagamentoDebito(
+                    totalFinal, dados.tokenCartao, descricao, numeroPedido, dados
+                );
+                break;
+                
+            case 'boleto':
+                pagamentoResult = await pagamentoService.gerarBoleto(totalFinal, descricao, numeroPedido, dados);
+                break;
+                
+            case 'vale_alimentacao':
+            case 'vale_refeicao':
+                if (!dados.tokenCartao) return { sucesso: false, mensagem: 'Token do cartão necessário.' };
+                pagamentoResult = await pagamentoService.gerarPagamentoValeAlimentacao(
+                    totalFinal, dados.tokenCartao, descricao, numeroPedido, dados.bandeira || 'sodexo'
+                );
+                break;
+                
+            case 'dinheiro':
+                pagamentoResult = await pagamentoService.gerarPagamentoDinheiro(totalFinal, numeroPedido);
+                break;
+                
+            case 'pix_parcelado':
+                const parc = dados.parcelas || 3;
+                pagamentoResult = await pagamentoService.gerarPixParcelado(totalFinal, parc, descricao, numeroPedido);
+                break;
+                
+            default:
+                return { sucesso: false, mensagem: 'Método de pagamento inválido.' };
+        }
+        
+        if (!pagamentoResult || !pagamentoResult.sucesso) {
+            return { sucesso: false, mensagem: pagamentoResult?.mensagem || 'Erro ao processar pagamento.' };
         }
         
         // Salva pedido
         try {
             const pedido = db.prepare(`INSERT INTO pedidos 
-                (numero, cliente_id, endereco_id, tipo_entrega, status, subtotal, taxa_entrega, desconto, total, cupom, comentario, pagamento_metodo, pagamento_id, pagamento_qrcode, pagamento_status)
-                VALUES (?, ?, ?, ?, 'recebido', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendente')`)
+                (numero, cliente_id, endereco_id, tipo_entrega, status, subtotal, taxa_entrega, desconto, total, cupom, comentario, opcao_falta, pagamento_metodo, pagamento_id, pagamento_qrcode, pagamento_status)
+                VALUES (?, ?, ?, ?, 'recebido', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
             .run(
                 numeroPedido, cliente.id, dados.enderecoId || null, dados.tipoEntrega || 'entrega',
                 calculo.subtotal, calculo.taxaEntrega, desconto, totalFinal,
-                cupomCodigo, dados.comentario || null,
-                metodoPagamento, pagamentoResult?.payment_id || null,
-                pagamentoResult?.copia_cola || null
+                cupomCodigo, dados.comentario || null, dados.opcaoFalta || 'substituir',
+                metodoPagamento, pagamentoResult.payment_id || null,
+                pagamentoResult.copia_cola || pagamentoResult.boleto_codigo || null,
+                pagamentoResult.status === 'approved' ? 'approved' : 'pendente'
             );
             
             // Salva itens
@@ -149,41 +204,59 @@ class CheckoutService {
                 db.prepare('INSERT INTO itens_pedido (pedido_id, produto_nome, marca, quantidade, preco_unitario, comentario) VALUES (?, ?, ?, ?, ?, ?)')
                 .run(pedido.lastInsertRowid, item.nome, item.marca, item.quantidade, preco, item.comentario);
                 
-                // Atualiza estoque
                 db.prepare('UPDATE produtos SET estoque = estoque - ? WHERE id = ?').run(item.quantidade, item.produto_id);
             }
             
-            // Atualiza uso do cupom
             if (cupomCodigo) {
                 db.prepare('UPDATE cupons SET uso_atual = uso_atual + 1 WHERE codigo = ?').run(cupomCodigo);
             }
             
-            // Limpa carrinho
             await CarrinhoService.limpar(userId);
             
-            logger.info(`📦 Pedido ${numeroPedido} criado - R$ ${totalFinal}`);
+            // Se pagamento já foi aprovado (débito/dinheiro)
+            if (pagamentoResult.status === 'approved') {
+                db.prepare('UPDATE pedidos SET status = ? WHERE id = ?').run('confirmado', pedido.lastInsertRowid);
+                db.prepare('UPDATE clientes SET total_gasto = total_gasto + ? WHERE id = ?').run(totalFinal, cliente.id);
+            }
+            
+            logger.info(`📦 Pedido ${numeroPedido} - ${metodoPagamento} - R$ ${totalFinal}`);
             
             return {
                 sucesso: true,
                 pedidoId: pedido.lastInsertRowid,
                 numero: numeroPedido,
                 total: totalFinal,
+                metodo: metodoPagamento,
                 pagamento: pagamentoResult
             };
             
         } catch (error) {
             logger.error('Erro ao finalizar pedido: ' + error.message);
-            return { sucesso: false, mensagem: 'Erro ao finalizar pedido.' };
+            return { sucesso: false, mensagem: 'Erro ao salvar pedido.' };
         }
     }
     
-    // Opções de falta de produto
-    static getOpcoesFalta() {
-        return [
-            { id: 'substituir', nome: '✅ Escolher outro semelhante' },
-            { id: 'nao_substituir', nome: '❌ Não substituir' },
-            { id: 'contato', nome: '📞 Entrar em contato' }
-        ];
+    // Calcular parcelas
+    static calcularParcelas(valor) {
+        return pagamentoService.calcularParcelas(valor);
+    }
+    
+    // Verificar pagamento
+    static async verificarPagamento(pedidoId) {
+        const db = getDatabase();
+        const pedido = db.prepare('SELECT * FROM pedidos WHERE id = ?').get(pedidoId);
+        if (!pedido || !pedido.pagamento_id) return { aprovado: false, status: 'sem_pagamento' };
+        
+        const resultado = await pagamentoService.verificarPagamento(pedido.pagamento_id);
+        
+        if (resultado.aprovado && pedido.pagamento_status !== 'approved') {
+            db.prepare('UPDATE pedidos SET status = ?, pagamento_status = ? WHERE id = ?').run('confirmado', 'approved', pedidoId);
+            db.prepare('UPDATE clientes SET total_gasto = total_gasto + ? WHERE id = ?').run(pedido.total, pedido.cliente_id);
+            const pontos = Math.floor(pedido.total);
+            db.prepare('UPDATE clientes SET pontos_fidelidade = pontos_fidelidade + ? WHERE id = ?').run(pontos, pedido.cliente_id);
+        }
+        
+        return resultado;
     }
 }
 
