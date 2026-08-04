@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Supermercado</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --tg-bg: var(--tg-theme-bg-color, #f5f5f5);
+            --tg-text: var(--tg-theme-text-color, #333);
+            --tg-btn: var(--tg-theme-button-color, #27ae60);
+            --tg-btn-text: var(--tg-theme-button-text-color, #fff);
+            --tg-secondary: var(--tg-theme-secondary-bg-color, #fff);
+            --tg-hint: var(--tg-theme-hint-color, #999);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--tg-bg);
+            color: var(--tg-text);
+            padding-bottom: 80px;
+        }
+        .header {
+            background: var(--tg-btn);
+            color: var(--tg-btn-text);
+            padding: 16px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .search-bar {
+            padding: 10px 16px;
+            background: var(--tg-secondary);
+        }
+        .search-bar input {
+            width: 100%;
+            padding: 12px 16px;
+            border-radius: 25px;
+            border: 2px solid #ddd;
+            font-size: 16px;
+            outline: none;
+            background: var(--tg-bg);
+            color: var(--tg-text);
+        }
+        .categorias {
+            display: flex;
+            overflow-x: auto;
+            padding: 12px;
+            gap: 10px;
+            background: var(--tg-secondary);
+            white-space: nowrap;
+        }
+        .categoria {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 10px 15px;
+            background: var(--tg-bg);
+            border-radius: 15px;
+            min-width: 70px;
+            cursor: pointer;
+            font-size: 12px;
+            border: 2px solid transparent;
+            transition: 0.2s;
+        }
+        .categoria.active { border-color: var(--tg-btn); }
+        .categoria .emoji { font-size: 28px; }
+        .banner {
+            margin: 12px 16px;
+            background: linear-gradient(135deg, #e74c3c, #f39c12);
+            color: white;
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+        }
+        .banner h2 { font-size: 20px; margin-bottom: 8px; }
+        .banner p { font-size: 14px; opacity: 0.9; }
+        .produtos {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            padding: 12px 16px;
+        }
+        .produto {
+            background: var(--tg-secondary);
+            border-radius: 15px;
+            padding: 12px;
+            cursor: pointer;
+            transition: 0.2s;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        .produto:active { transform: scale(0.97); }
+        .produto .foto {
+            width: 100%;
+            height: 130px;
+            object-fit: cover;
+            border-radius: 10px;
+            margin-bottom: 8px;
+            background: #eee;
+        }
+        .produto .nome {
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 4px;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .produto .marca { font-size: 11px; color: var(--tg-hint); margin-bottom: 4px; }
+        .produto .preco { font-size: 16px; font-weight: bold; color: var(--tg-btn); }
+        .produto .preco-antigo { font-size: 12px; color: var(--tg-hint); text-decoration: line-through; }
+        .produto .btn-add {
+            width: 100%;
+            padding: 10px;
+            background: var(--tg-btn);
+            color: var(--tg-btn-text);
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 8px;
+        }
+        .carrinho-btn {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--tg-btn);
+            color: var(--tg-btn-text);
+            padding: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            z-index: 100;
+        }
+        .carrinho-btn .badge {
+            background: #e74c3c;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 15px;
+            font-size: 13px;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--tg-hint);
+        }
+        .empty {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--tg-hint);
+        }
+        .empty .icon { font-size: 60px; margin-bottom: 15px; }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 200;
+            justify-content: center;
+            align-items: flex-end;
+        }
+        .modal.active { display: flex; }
+        .modal-content {
+            background: var(--tg-secondary);
+            width: 100%;
+            max-height: 80vh;
+            border-radius: 20px 20px 0 0;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .modal-close {
+            font-size: 24px;
+            cursor: pointer;
+            padding: 5px;
+        }
+        .produto-detalhe .foto-grande {
+            width: 100%;
+            height: 250px;
+            object-fit: cover;
+            border-radius: 15px;
+            margin-bottom: 15px;
+        }
+        .qtd-control {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .qtd-btn {
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            border: 2px solid var(--tg-btn);
+            background: white;
+            color: var(--tg-btn);
+            font-size: 22px;
+            cursor: pointer;
+        }
+        .qtd-num { font-size: 22px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="header" id="headerNome">🛒 Supermercado</div>
+    
+    <div class="search-bar">
+        <input type="text" id="searchInput" placeholder="🔍 Pesquisar produtos..." oninput="pesquisar()">
+    </div>
+    
+    <div class="categorias" id="categoriasList"></div>
+    
+    <div class="banner" id="banner" style="display:none">
+        <h2>🔥 Ofertas do Dia</h2>
+        <p>Aproveite descontos especiais!</p>
+    </div>
+    
+    <div class="produtos" id="produtosList"></div>
+    
+    <div class="loading" id="loading">⏳ Carregando...</div>
+    <div class="empty" id="empty" style="display:none">
+        <div class="icon">📭</div>
+        <p>Nenhum produto encontrado</p>
+    </div>
+    
+    <div class="carrinho-btn" id="carrinhoBtn" onclick="toggleCarrinho()">
+        <span>🛒 Ver Carrinho</span>
+        <span class="badge" id="carrinhoBadge">0</span>
+    </div>
+    
+    <!-- Modal Produto -->
+    <div class="modal" id="modalProduto">
+        <div class="modal-content produto-detalhe">
+            <div class="modal-header">
+                <h3 id="modalNome"></h3>
+                <span class="modal-close" onclick="closeModal()">✕</span>
+            </div>
+            <img id="modalFoto" class="foto-grande" src="" alt="">
+            <p id="modalMarca" style="color:var(--tg-hint)"></p>
+            <p id="modalDesc"></p>
+            <h2 id="modalPreco" style="color:var(--tg-btn)"></h2>
+            <p id="modalEstoque" style="color:var(--tg-hint)"></p>
+            <div class="qtd-control">
+                <button class="qtd-btn" onclick="changeQtd(-1)">➖</button>
+                <span class="qtd-num" id="qtdNum">1</span>
+                <button class="qtd-btn" onclick="changeQtd(1)">➕</button>
+            </div>
+            <button class="btn-add" onclick="addToCart()" style="padding:15px; font-size:16px">🛒 Adicionar ao Carrinho</button>
+        </div>
+    </div>
+    
+    <!-- Modal Carrinho -->
+    <div class="modal" id="modalCarrinho">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>🛒 Meu Carrinho</h3>
+                <span class="modal-close" onclick="toggleCarrinho()">✕</span>
+            </div>
+            <div id="carrinhoItens"></div>
+            <div id="carrinhoTotal" style="font-size:20px;font-weight:bold;margin-top:15px"></div>
+            <button class="btn-add" onclick="finalizarPedido()" style="padding:15px;font-size:16px;width:100%;margin-top:15px">💳 Finalizar Pedido</button>
+        </div>
+    </div>
+    
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.ready();
+        
+        const API = '/api';
+        let categoriaAtiva = null;
+        let produtos = [];
+        let carrinho = [];
+        let produtoAtual = null;
+        let qtdAtual = 1;
+        
+        // Inicializar
+        async function init() {
+            document.getElementById('headerNome').textContent = '🛒 Supermercado';
+            await loadCategorias();
+            await loadProdutos();
+            await loadCarrinho();
+        }
+        
+        // Carregar categorias
+        async function loadCategorias() {
+            try {
+                const resp = await fetch(`${API}/categorias`);
+                const cats = await resp.json();
+                const div = document.getElementById('categoriasList');
+                div.innerHTML = cats.map(c => 
+                    `<div class="categoria ${c.id === categoriaAtiva ? 'active' : ''}" onclick="filtrarCategoria(${c.id})">
+                        <span class="emoji">${c.emoji}</span>
+                        <span>${c.nome}</span>
+                    </div>`
+                ).join('');
+            } catch (e) { console.error(e); }
+        }
+        
+        // Carregar produtos
+        async function loadProdutos(catId = null) {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('produtosList').innerHTML = '';
+            
+            try {
+                const url = catId ? `${API}/produtos?categoria_id=${catId}` : `${API}/produtos`;
+                const resp = await fetch(url);
+                const data = await resp.json();
+                produtos = data.produtos || data;
+                renderProdutos();
+            } catch (e) {
+                document.getElementById('empty').style.display = 'block';
+            }
+            document.getElementById('loading').style.display = 'none';
+        }
+        
+        // Renderizar produtos
+        function renderProdutos() {
+            const div = document.getElementById('produtosList');
+            if (produtos.length === 0) {
+                document.getElementById('empty').style.display = 'block';
+                div.innerHTML = '';
+                return;
+            }
+            document.getElementById('empty').style.display = 'none';
+            
+            div.innerHTML = produtos.map(p => `
+                <div class="produto" onclick="openProduto(${p.id})">
+                    ${p.foto ? `<img src="${p.foto}" class="foto" alt="">` : '<div class="foto" style="display:flex;align-items:center;justify-content:center;font-size:40px">📦</div>'}
+                    <div class="nome">${p.nome}</div>
+                    ${p.marca ? `<div class="marca">${p.marca}</div>` : ''}
+                    <div class="preco">${formatarMoeda(p.preco_promocional || p.preco)}</div>
+                    ${p.preco_promocional ? `<div class="preco-antigo">${formatarMoeda(p.preco)}</div>` : ''}
+                    <button class="btn-add" onclick="event.stopPropagation();quickAdd(${p.id})">🛒 Adicionar</button>
+                </div>
+            `).join('');
+        }
+        
+        // Filtrar por categoria
+        function filtrarCategoria(catId) {
+            categoriaAtiva = categoriaAtiva === catId ? null : catId;
+            loadCategorias();
+            loadProdutos(categoriaAtiva);
+        }
+        
+        // Pesquisar
+        let searchTimeout;
+        function pesquisar() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(async () => {
+                const termo = document.getElementById('searchInput').value.trim();
+                if (termo.length < 2) return loadProdutos(categoriaAtiva);
+                
+                try {
+                    const resp = await fetch(`${API}/produtos/pesquisar?q=${encodeURIComponent(termo)}`);
+                    const data = await resp.json();
+                    produtos = data.produtos || data;
+                    renderProdutos();
+                } catch (e) {}
+            }, 500);
+        }
+        
+        // Abrir produto
+        function openProduto(id) {
+            produtoAtual = produtos.find(p => p.id === id);
+            if (!produtoAtual) return;
+            
+            qtdAtual = 1;
+            document.getElementById('modalNome').textContent = produtoAtual.nome;
+            document.getElementById('modalMarca').textContent = produtoAtual.marca || '';
+            document.getElementById('modalDesc').textContent = produtoAtual.descricao || '';
+            document.getElementById('modalPreco').textContent = formatarMoeda(produtoAtual.preco_promocional || produtoAtual.preco);
+            document.getElementById('modalEstoque').textContent = `Estoque: ${produtoAtual.estoque} ${produtoAtual.unidade || 'un'}`;
+            document.getElementById('modalFoto').src = produtoAtual.foto || '';
+            document.getElementById('qtdNum').textContent = '1';
+            document.getElementById('modalProduto').classList.add('active');
+        }
+        
+        function closeModal() { document.getElementById('modalProduto').classList.remove('active'); }
+        
+        function changeQtd(delta) {
+            qtdAtual = Math.max(1, Math.min(qtdAtual + delta, produtoAtual?.estoque || 99));
+            document.getElementById('qtdNum').textContent = qtdAtual;
+        }
+        
+        async function addToCart() {
+            if (!produtoAtual) return;
+            
+            try {
+                await fetch(`${API}/carrinho/add`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userId: tg.initDataUnsafe?.user?.id,
+                        produtoId: produtoAtual.id,
+                        quantidade: qtdAtual
+                    })
+                });
+                closeModal();
+                await loadCarrinho();
+                tg.showAlert('✅ Produto adicionado!');
+            } catch (e) {
+                tg.showAlert('❌ Erro ao adicionar');
+            }
+        }
+        
+        async function quickAdd(id) {
+            try {
+                await fetch(`${API}/carrinho/add`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userId: tg.initDataUnsafe?.user?.id,
+                        produtoId: id,
+                        quantidade: 1
+                    })
+                });
+                await loadCarrinho();
+                tg.showAlert('✅ Adicionado!');
+            } catch (e) {}
+        }
+        
+        // Carrinho
+        async function loadCarrinho() {
+            try {
+                const resp = await fetch(`${API}/carrinho?userId=${tg.initDataUnsafe?.user?.id}`);
+                const data = await resp.json();
+                carrinho = data.itens || [];
+                document.getElementById('carrinhoBadge').textContent = carrinho.length;
+            } catch (e) {}
+        }
+        
+        function toggleCarrinho() {
+            const modal = document.getElementById('modalCarrinho');
+            if (modal.classList.contains('active')) {
+                modal.classList.remove('active');
+            } else {
+                renderCarrinho();
+                modal.classList.add('active');
+            }
+        }
+        
+        function renderCarrinho() {
+            const div = document.getElementById('carrinhoItens');
+            if (carrinho.length === 0) {
+                div.innerHTML = '<p style="text-align:center;padding:30px">🛒 Carrinho vazio</p>';
+                document.getElementById('carrinhoTotal').textContent = '';
+                return;
+            }
+            
+            let total = 0;
+            div.innerHTML = carrinho.map((item, i) => {
+                const preco = item.preco_promocional || item.preco;
+                total += preco * item.quantidade;
+                return `
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #eee">
+                        <div>
+                            <strong>${item.nome}</strong>
+                            <div style="color:var(--tg-hint);font-size:13px">${item.quantidade}x ${formatarMoeda(preco)}</div>
+                        </div>
+                        <button onclick="removerItem(${i})" style="background:none;border:none;font-size:18px;cursor:pointer">🗑</button>
+                    </div>
+                `;
+            }).join('');
+            
+            document.getElementById('carrinhoTotal').textContent = `💰 Total: ${formatarMoeda(total)}`;
+        }
+        
+        async function removerItem(index) {
+            const item = carrinho[index];
+            try {
+                await fetch(`${API}/carrinho/remover`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ carrinhoId: item.id })
+                });
+                await loadCarrinho();
+                renderCarrinho();
+            } catch (e) {}
+        }
+        
+        function finalizarPedido() {
+            if (carrinho.length === 0) return tg.showAlert('Carrinho vazio!');
+            tg.sendData(JSON.stringify({ action: 'finalizar_pedido', carrinho }));
+        }
+        
+        function formatarMoeda(v) {
+            return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+        }
+        
+        init();
+    </script>
+</body>
+</html>
