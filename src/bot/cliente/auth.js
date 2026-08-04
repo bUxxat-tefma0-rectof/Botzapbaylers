@@ -1,44 +1,29 @@
 const { getDatabase } = require('../../database/connection');
-const { enviarCodigoWhatsApp } = require('../../services/whatsapp');
-const { gerarCodigo, formatarTelefone, validarCPF, validarCNPJ } = require('../../utils/helpers');
-const ValidacaoService = require('../../services/validacao');
+const { gerarCodigo } = require('../../utils/helpers');
 const logger = require('../../utils/logger');
 
 class AuthService {
     
-    // Envia código via WhatsApp
-    static async enviarCodigo(chatId, userId, telefone) {
+    // Gera e salva código de verificação
+    static async enviarCodigo(userId) {
         const db = getDatabase();
-        const telLimpo = String(telefone).replace(/\D/g, '');
-        
-        const validacao = ValidacaoService.validarTelefone(telefone);
-        if (!validacao.valido) {
-            return { sucesso: false, mensagem: validacao.msg };
-        }
-        
         const codigo = gerarCodigo();
         
-        // Salva no banco
         const existe = db.prepare('SELECT * FROM clientes WHERE telegram_id = ?').get(userId);
         if (existe) {
-            db.prepare('UPDATE clientes SET telefone = ?, codigo_whatsapp = ? WHERE telegram_id = ?').run(telLimpo, codigo, userId);
+            db.prepare('UPDATE clientes SET codigo_whatsapp = ?, etapa_cadastro = ? WHERE telegram_id = ?')
+                .run(codigo, 'verificar', userId);
         } else {
-            db.prepare('INSERT INTO clientes (telegram_id, telefone, codigo_whatsapp) VALUES (?, ?, ?)').run(userId, telLimpo, codigo);
+            db.prepare('INSERT INTO clientes (telegram_id, codigo_whatsapp, etapa_cadastro) VALUES (?, ?, ?)')
+                .run(userId, codigo, 'verificar');
         }
         
-        // Envia via WhatsApp
-        try {
-            await enviarCodigoWhatsApp(telLimpo, codigo);
-            logger.info(`📱 Código enviado para ${telLimpo}`);
-            return { sucesso: true, telefone: telLimpo, mensagem: 'Código enviado!' };
-        } catch (error) {
-            logger.error('Erro ao enviar WhatsApp: ' + error.message);
-            return { sucesso: false, mensagem: 'Erro ao enviar código. Verifique se o WhatsApp está conectado.' };
-        }
+        logger.info(`🔐 Código gerado para ${userId}: ${codigo}`);
+        return { sucesso: true, codigo };
     }
     
     // Verifica código
-    static async verificarCodigo(chatId, userId, codigo) {
+    static async verificarCodigo(userId, codigo) {
         const db = getDatabase();
         const cliente = db.prepare('SELECT * FROM clientes WHERE telegram_id = ?').get(userId);
         
@@ -50,78 +35,45 @@ class AuthService {
             return { sucesso: false, mensagem: 'Código incorreto. Tente novamente.' };
         }
         
-        // Marca como verificado
-        db.prepare('UPDATE clientes SET telefone_verificado = 1, codigo_whatsapp = NULL WHERE telegram_id = ?').run(userId);
+        db.prepare('UPDATE clientes SET telefone_verificado = 1, codigo_whatsapp = NULL WHERE telegram_id = ?')
+            .run(userId);
         
-        logger.info(`✅ Telefone verificado: ${cliente.telefone}`);
+        logger.info(`✅ Código verificado para ${userId}`);
+        
         return { 
             sucesso: true, 
-            cadastroCompleto: !!cliente.nome,
-            cliente: cliente
+            cadastroCompleto: !!(cliente.nome && cliente.sobrenome),
+            cliente 
         };
     }
     
+    // Reenviar código
+    static async reenviarCodigo(userId) {
+        return await this.enviarCodigo(userId);
+    }
+    
     // Login com CPF
-    static async loginCPF(chatId, userId, cpf) {
+    static async loginCPF(userId, cpf) {
         const db = getDatabase();
         const cpfLimpo = String(cpf).replace(/\D/g, '');
+        const { validarCPF } = require('../../utils/helpers');
         
         if (!validarCPF(cpfLimpo)) {
             return { sucesso: false, mensagem: 'CPF inválido.' };
         }
         
         const cliente = db.prepare('SELECT * FROM clientes WHERE cpf = ?').get(cpfLimpo);
-        
         if (!cliente) {
-            return { sucesso: false, mensagem: 'CPF não encontrado. Faça o cadastro primeiro.' };
+            return { sucesso: false, mensagem: 'CPF não encontrado.' };
         }
-        
-        if (cliente.bloqueado) {
-            return { sucesso: false, mensagem: 'Sua conta está bloqueada. Entre em contato com o suporte.' };
-        }
-        
-        // Vincula o Telegram ID
-        db.prepare('UPDATE clientes SET telegram_id = ? WHERE cpf = ?').run(userId, cpfLimpo);
-        
-        logger.info(`🔑 Login CPF: ${cpfLimpo}`);
-        return { sucesso: true, cliente };
-    }
-    
-    // Login com CNPJ
-    static async loginCNPJ(chatId, userId, cnpj) {
-        const db = getDatabase();
-        const cnpjLimpo = String(cnpj).replace(/\D/g, '');
-        
-        if (!validarCNPJ(cnpjLimpo)) {
-            return { sucesso: false, mensagem: 'CNPJ inválido.' };
-        }
-        
-        const cliente = db.prepare('SELECT * FROM clientes WHERE cnpj = ?').get(cnpjLimpo);
-        
-        if (!cliente) {
-            return { sucesso: false, mensagem: 'CNPJ não encontrado. Faça o cadastro primeiro.' };
-        }
-        
         if (cliente.bloqueado) {
             return { sucesso: false, mensagem: 'Conta bloqueada.' };
         }
         
-        db.prepare('UPDATE clientes SET telegram_id = ? WHERE cnpj = ?').run(userId, cnpjLimpo);
+        // Vincula o Telegram ID
+        db.prepare('UPDATE clientes SET telegram_id = ? WHERE id = ?').run(userId, cliente.id);
         
-        logger.info(`🔑 Login CNPJ: ${cnpjLimpo}`);
         return { sucesso: true, cliente };
-    }
-    
-    // Reenviar código
-    static async reenviarCodigo(chatId, userId) {
-        const db = getDatabase();
-        const cliente = db.prepare('SELECT * FROM clientes WHERE telegram_id = ?').get(userId);
-        
-        if (!cliente || !cliente.telefone) {
-            return { sucesso: false, mensagem: 'Nenhum telefone cadastrado.' };
-        }
-        
-        return await this.enviarCodigo(chatId, userId, cliente.telefone);
     }
 }
 
