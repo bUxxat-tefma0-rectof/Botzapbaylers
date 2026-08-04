@@ -1,15 +1,5 @@
-.env
 node_modules/
+.env
 *.db
-*.sqlite
-src/storage/sessions/
-src/storage/pdfs/*
-!src/storage/pdfs/.gitkeep
-src/storage/qrcodes/*
-!src/storage/qrcodes/.gitkeep
+auth_info_baileys/
 logs/
-*.log
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
