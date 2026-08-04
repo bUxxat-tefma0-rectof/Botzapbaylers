@@ -290,4 +290,183 @@ async function finalizar() {
         enderecoId: state.enderecoSelecionado
     });
     
-    if (r.sucesso)
+    if (r.sucesso) {
+        state.carrinho = [];
+        await loadCarrinho();
+        toast('✅ Pedido realizado!', 'success');
+        
+        if (r.pagamento?.qr_code_base64) {
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay';
+            overlay.onclick = () => overlay.remove();
+            overlay.innerHTML = `<div class="modal-sheet" onclick="event.stopPropagation()"><div class="modal-handle"></div><div class="modal-body" style="text-align:center"><h3>💳 PIX</h3><img src="data:image/png;base64,${r.pagamento.qr_code_base64}" style="width:250px;height:250px"><p style="margin:15px 0;word-break:break-all;font-size:11px">${r.pagamento.copia_cola||''}</p><button class="btn btn-primary" onclick="this.closest('.modal-overlay').remove();showPage('pedidos')">✅ Já paguei</button></div></div>`;
+            document.body.appendChild(overlay);
+        }
+        showPage('pedidos');
+    } else {
+        toast('❌ ' + (r.mensagem || 'Erro'), 'error');
+    }
+}
+
+// ============ PEDIDOS ============
+async function loadPedidos() {
+    const data = await apiGet(`/pedidos?userId=${state.userId}`);
+    state.pedidos = data.pedidos || [];
+    renderPedidos();
+}
+
+function renderPedidos() {
+    const c = document.getElementById('ordersList');
+    const e = document.getElementById('ordersEmpty');
+    if (!c) return;
+    
+    if (state.pedidos.length === 0) { if (e) e.style.display = 'block'; c.innerHTML = ''; return; }
+    if (e) e.style.display = 'none';
+    
+    const st = {recebido:'status-pending',confirmado:'status-confirmed',separando:'status-preparing',entrega:'status-delivering',entregue:'status-delivered',cancelado:'status-cancelled'};
+    
+    c.innerHTML = state.pedidos.map(p => `
+        <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><strong>${p.numero}</strong><span class="status-badge ${st[p.status]||'status-pending'}">${p.status}</span></div><div style="font-size:13px;color:#999">${p.data_pedido||''}</div><div style="font-size:18px;font-weight:bold;color:#27ae60;margin-top:5px">${fmt(p.total)}</div></div>
+    `).join('');
+}
+
+// ============ PERFIL ============
+async function loadPerfil() {
+    const data = await apiGet(`/perfil?userId=${state.userId}`);
+    state.perfil = data;
+}
+
+function renderPerfil() {
+    const c = document.getElementById('profileContent');
+    if (!c) return;
+    const p = state.perfil || {};
+    
+    c.innerHTML = `<div class="card" style="text-align:center"><div style="font-size:60px">👤</div><h2>${p.nome||'Cliente'} ${p.sobrenome||''}</h2><p style="color:#999">${p.email||'N/A'}</p></div>
+    <div class="card"><div class="card-title">📊 Resumo</div><div style="display:flex;justify-content:space-around;text-align:center"><div><div style="font-size:24px;font-weight:bold">${p.totalPedidos||0}</div><div style="font-size:12px;color:#999">Pedidos</div></div><div><div style="font-size:24px;font-weight:bold;color:#27ae60">${fmt(p.total_gasto||0)}</div><div style="font-size:12px;color:#999">Total</div></div><div><div style="font-size:24px;font-weight:bold">⭐</div><div style="font-size:12px;color:#999">${p.pontos_fidelidade||0} pts</div></div></div></div>
+    <div class="list-item" onclick="showPage('pedidos')"><span class="item-icon">📦</span><div class="item-info"><div class="item-title">Meus Pedidos</div></div><span class="item-arrow">›</span></div>
+    <div class="list-item" onclick="showPage('enderecos')"><span class="item-icon">📍</span><div class="item-info"><div class="item-title">Meus Endereços</div></div><span class="item-arrow">›</span></div>
+    <div class="list-item" onclick="showPage('ofertas')"><span class="item-icon">🔥</span><div class="item-info"><div class="item-title">Ofertas</div></div><span class="item-arrow">›</span></div>`;
+}
+
+// ============ ENDEREÇOS ============
+async function loadEnderecos() {
+    const data = await apiGet(`/enderecos?userId=${state.userId}`);
+    state.enderecos = data || [];
+}
+
+function renderEnderecos() {
+    const c = document.getElementById('enderecosContent');
+    if (!c) return;
+    
+    c.innerHTML = state.enderecos.map(e => `
+        <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <strong>${e.apelido || 'Principal'} ${e.principal ? '⭐' : ''}</strong>
+                <button onclick="deletarEndereco(${e.id})" style="background:none;border:none;font-size:18px">🗑</button>
+            </div>
+            <p style="margin-top:5px;font-size:14px">${e.logradouro}, ${e.numero}${e.complemento ? ' - ' + e.complemento : ''}</p>
+            <p style="font-size:13px;color:#999">${e.bairro} - ${e.cidade}/${e.estado}</p>
+            ${!e.principal ? `<button class="btn btn-outline" style="margin-top:8px;padding:8px" onclick="definirPrincipal(${e.id})">⭐ Definir como Principal</button>` : ''}
+        </div>
+    `).join('') + `
+    <div style="padding:15px">
+        <button class="btn btn-primary" onclick="showNovoEndereco()">➕ Novo Endereço</button>
+    </div>`;
+}
+
+function showNovoEndereco() {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+    
+    overlay.innerHTML = `<div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-handle"></div>
+        <div class="modal-header"><h3>📍 Novo Endereço</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+        <div class="modal-body">
+            <div class="form-group"><label>CEP</label><input id="novoCep" class="form-input" placeholder="87700000" onblur="buscarCepNovo()"></div>
+            <div class="form-group"><label>Rua</label><input id="novoRua" class="form-input" placeholder="Rua"></div>
+            <div class="form-group"><label>Número</label><input id="novoNum" class="form-input" placeholder="100"></div>
+            <div class="form-group"><label>Bairro</label><input id="novoBairro" class="form-input" placeholder="Bairro"></div>
+            <div class="form-group"><label>Cidade</label><input id="novoCidade" class="form-input" placeholder="Cidade"></div>
+            <div class="form-group"><label>Estado</label><input id="novoEstado" class="form-input" placeholder="PR"></div>
+            <div class="form-group"><label>Apelido</label><input id="novoApelido" class="form-input" placeholder="Casa, Trabalho..."></div>
+            <button class="btn btn-primary" onclick="salvarEndereco()">💾 Salvar</button>
+        </div>
+    </div>`;
+    
+    document.body.appendChild(overlay);
+}
+
+async function buscarCepNovo() {
+    const cep = document.getElementById('novoCep').value.replace(/\D/g, '');
+    if (cep.length !== 8) return;
+    const data = await apiGet(`/cep/${cep}`);
+    if (data.sucesso) {
+        document.getElementById('novoRua').value = data.dados.logradouro || '';
+        document.getElementById('novoBairro').value = data.dados.bairro || '';
+        document.getElementById('novoCidade').value = data.dados.cidade || '';
+        document.getElementById('novoEstado').value = data.dados.estado || '';
+    }
+}
+
+async function salvarEndereco() {
+    const dados = {
+        userId: state.userId,
+        cep: document.getElementById('novoCep').value,
+        logradouro: document.getElementById('novoRua').value,
+        numero: document.getElementById('novoNum').value,
+        bairro: document.getElementById('novoBairro').value,
+        cidade: document.getElementById('novoCidade').value,
+        estado: document.getElementById('novoEstado').value,
+        apelido: document.getElementById('novoApelido').value || 'Principal'
+    };
+    
+    const r = await apiPost('/enderecos/salvar', dados);
+    if (r.sucesso) {
+        document.querySelector('.modal-overlay')?.remove();
+        await loadEnderecos();
+        renderEnderecos();
+        toast('✅ Endereço salvo!');
+    } else {
+        toast('❌ ' + (r.mensagem || 'Erro'));
+    }
+}
+
+async function deletarEndereco(id) {
+    if (!confirm('Remover este endereço?')) return;
+    await apiPost('/enderecos/deletar', { userId: state.userId, enderecoId: id });
+    await loadEnderecos();
+    renderEnderecos();
+}
+
+async function definirPrincipal(id) {
+    await apiPost('/enderecos/principal', { userId: state.userId, enderecoId: id });
+    await loadEnderecos();
+    renderEnderecos();
+    toast('✅ Endereço principal atualizado!');
+}
+
+// ============ OFERTAS ============
+async function loadOfertas() {
+    const data = await apiGet('/produtos/ofertas');
+    const prods = data.produtos || [];
+    const c = document.getElementById('ofertasContainer');
+    if (c) c.innerHTML = prods.map(p => {
+        const desc = p.preco_promocional ? Math.round((1 - p.preco_promocional / p.preco) * 100) : 0;
+        return `<div class="product-card" onclick="abrirProduto(${p.id})">
+            ${desc > 0 ? `<div class="discount-badge">-${desc}%</div>` : ''}
+            <div class="product-image" style="font-size:50px;display:flex;align-items:center;justify-content:center;background:#eee">📦</div>
+            <div class="product-info"><div class="product-name">${p.nome}</div><span class="product-price">${fmt(p.preco_promocional||p.preco)}</span>${p.preco_promocional ? `<span class="product-old-price">${fmt(p.preco)}</span>` : ''}</div>
+        </div>`;
+    }).join('') || '<div class="empty-state"><div class="empty-icon">🔥</div><div class="empty-title">Nenhuma oferta</div></div>';
+}
+
+// ============ UTILS ============
+function fmt(v) { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0); }
+function toast(msg, type = '') {
+    const t = document.createElement('div');
+    t.className = `toast ${type}`;
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 2500);
+}
