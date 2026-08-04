@@ -81,7 +81,7 @@ app.post('/api/carrinho/add', (req, res) => {
     const db = getDatabase();
     const { userId, produtoId, quantidade } = req.body;
     const cliente = db.prepare('SELECT id FROM clientes WHERE telegram_id = ?').get(userId);
-    if (!cliente) return res.json({ sucesso: false, mensagem: 'Cliente não encontrado' });
+    if (!cliente) return res.json({ sucesso: false });
     
     const existe = db.prepare('SELECT * FROM carrinhos WHERE cliente_id = ? AND produto_id = ?').get(cliente.id, produtoId);
     if (existe) {
@@ -89,17 +89,14 @@ app.post('/api/carrinho/add', (req, res) => {
     } else {
         db.prepare('INSERT INTO carrinhos (cliente_id, produto_id, quantidade) VALUES (?,?,?)').run(cliente.id, produtoId, quantidade || 1);
     }
-    res.json({ sucesso: true, mensagem: 'Adicionado ao carrinho!' });
+    res.json({ sucesso: true, mensagem: 'Adicionado!' });
 });
 
 app.post('/api/carrinho/update', (req, res) => {
     const db = getDatabase();
     const { carrinhoId, quantidade } = req.body;
-    if (quantidade > 0) {
-        db.prepare('UPDATE carrinhos SET quantidade = ? WHERE id = ?').run(quantidade, carrinhoId);
-    } else {
-        db.prepare('DELETE FROM carrinhos WHERE id = ?').run(carrinhoId);
-    }
+    if (quantidade > 0) db.prepare('UPDATE carrinhos SET quantidade = ? WHERE id = ?').run(quantidade, carrinhoId);
+    else db.prepare('DELETE FROM carrinhos WHERE id = ?').run(carrinhoId);
     res.json({ sucesso: true });
 });
 
@@ -117,6 +114,55 @@ app.get('/api/perfil', (req, res) => {
     if (!cliente) return res.json({});
     const totalPedidos = db.prepare('SELECT COUNT(*) as t FROM pedidos WHERE cliente_id = ?').get(cliente.id).t;
     res.json({ ...cliente, totalPedidos });
+});
+
+// ============ API ENDEREÇOS ============
+app.get('/api/enderecos', (req, res) => {
+    const db = getDatabase();
+    const { userId } = req.query;
+    const cliente = db.prepare('SELECT id FROM clientes WHERE telegram_id = ?').get(userId);
+    if (!cliente) return res.json([]);
+    const enderecos = db.prepare('SELECT * FROM enderecos WHERE cliente_id = ? ORDER BY principal DESC').all(cliente.id);
+    res.json(enderecos);
+});
+
+app.post('/api/enderecos/salvar', (req, res) => {
+    const db = getDatabase();
+    const { userId, cep, logradouro, numero, complemento, referencia, bairro, cidade, estado, apelido } = req.body;
+    const cliente = db.prepare('SELECT id FROM clientes WHERE telegram_id = ?').get(userId);
+    if (!cliente) return res.json({ sucesso: false, mensagem: 'Cliente não encontrado' });
+    
+    const total = db.prepare('SELECT COUNT(*) as t FROM enderecos WHERE cliente_id = ?').get(cliente.id).t;
+    const principal = total === 0 ? 1 : 0;
+    
+    db.prepare('INSERT INTO enderecos (cliente_id, apelido, cep, logradouro, numero, complemento, referencia, bairro, cidade, estado, principal) VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(cliente.id, apelido || 'Principal', cep, logradouro, numero, complemento, referencia, bairro, cidade, estado, principal);
+    res.json({ sucesso: true, mensagem: 'Endereço salvo!' });
+});
+
+app.post('/api/enderecos/deletar', (req, res) => {
+    const db = getDatabase();
+    const { userId, enderecoId } = req.body;
+    const cliente = db.prepare('SELECT id FROM clientes WHERE telegram_id = ?').get(userId);
+    if (!cliente) return res.json({ sucesso: false });
+    db.prepare('DELETE FROM enderecos WHERE id = ? AND cliente_id = ?').run(enderecoId, cliente.id);
+    res.json({ sucesso: true });
+});
+
+app.post('/api/enderecos/principal', (req, res) => {
+    const db = getDatabase();
+    const { userId, enderecoId } = req.body;
+    const cliente = db.prepare('SELECT id FROM clientes WHERE telegram_id = ?').get(userId);
+    if (!cliente) return res.json({ sucesso: false });
+    db.prepare('UPDATE enderecos SET principal = 0 WHERE cliente_id = ?').run(cliente.id);
+    db.prepare('UPDATE enderecos SET principal = 1 WHERE id = ?').run(enderecoId);
+    res.json({ sucesso: true });
+});
+
+// ============ API CEP ============
+app.get('/api/cep/:cep', async (req, res) => {
+    const { consultarCEP } = require('./services/cep');
+    const resultado = await consultarCEP(req.params.cep);
+    res.json(resultado);
 });
 
 // ============ API PEDIDOS ============
@@ -140,7 +186,7 @@ app.get('/api/pedidos/:id', (req, res) => {
 app.post('/api/pedidos/finalizar', async (req, res) => {
     try {
         const db = getDatabase();
-        const { userId, metodoPagamento, tipoEntrega, cupom, comentario } = req.body;
+        const { userId, metodoPagamento, tipoEntrega, enderecoId, cupom, comentario } = req.body;
         
         const cliente = db.prepare('SELECT * FROM clientes WHERE telegram_id = ?').get(userId);
         if (!cliente) return res.json({ sucesso: false, mensagem: 'Cliente não encontrado.' });
@@ -148,18 +194,12 @@ app.post('/api/pedidos/finalizar', async (req, res) => {
         const itensCarrinho = db.prepare('SELECT c.*, p.nome, p.preco, p.preco_promocional, p.estoque FROM carrinhos c JOIN produtos p ON c.produto_id = p.id WHERE c.cliente_id = ?').all(cliente.id);
         if (itensCarrinho.length === 0) return res.json({ sucesso: false, mensagem: 'Carrinho vazio.' });
         
-        // Verifica estoque
         for (const item of itensCarrinho) {
-            if (item.estoque < item.quantidade) {
-                return res.json({ sucesso: false, mensagem: `Estoque insuficiente para: ${item.nome}` });
-            }
+            if (item.estoque < item.quantidade) return res.json({ sucesso: false, mensagem: `Estoque insuficiente: ${item.nome}` });
         }
         
         let subtotal = 0;
-        for (const item of itensCarrinho) {
-            const preco = item.preco_promocional || item.preco;
-            subtotal += preco * item.quantidade;
-        }
+        for (const item of itensCarrinho) subtotal += (item.preco_promocional || item.preco) * item.quantidade;
         
         const taxaEntrega = parseFloat(process.env.TAXA_ENTREGA_PADRAO || 8);
         let desconto = 0;
@@ -183,11 +223,9 @@ app.post('/api/pedidos/finalizar', async (req, res) => {
             pagamentoResult = await pagamentoService.gerarPix(total, desc, numeroPedido);
         }
         
-        if (!pagamentoResult.sucesso) {
-            return res.json({ sucesso: false, mensagem: pagamentoResult.mensagem || 'Erro ao gerar pagamento.' });
-        }
+        if (!pagamentoResult.sucesso) return res.json({ sucesso: false, mensagem: pagamentoResult.mensagem || 'Erro ao gerar pagamento.' });
         
-        const pedido = db.prepare('INSERT INTO pedidos (numero, cliente_id, tipo_entrega, status, subtotal, taxa_entrega, desconto, total, cupom, comentario, pagamento_metodo, pagamento_id, pagamento_qrcode, pagamento_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(numeroPedido, cliente.id, tipoEntrega || 'entrega', 'recebido', subtotal, taxaEntrega, desconto, total, cupom || null, comentario || null, metodoPagamento, pagamentoResult.payment_id, pagamentoResult.copia_cola || null, 'pendente');
+        const pedido = db.prepare('INSERT INTO pedidos (numero, cliente_id, endereco_id, tipo_entrega, status, subtotal, taxa_entrega, desconto, total, cupom, comentario, pagamento_metodo, pagamento_id, pagamento_qrcode, pagamento_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(numeroPedido, cliente.id, enderecoId || null, tipoEntrega || 'entrega', 'recebido', subtotal, taxaEntrega, desconto, total, cupom || null, comentario || null, metodoPagamento, pagamentoResult.payment_id, pagamentoResult.copia_cola || null, 'pendente');
         
         for (const item of itensCarrinho) {
             const preco = item.preco_promocional || item.preco;
@@ -199,25 +237,22 @@ app.post('/api/pedidos/finalizar', async (req, res) => {
         
         logger.info(`📦 Pedido ${numeroPedido} - ${metodoPagamento} - R$ ${total}`);
         
-        res.json({
-            sucesso: true,
-            pedidoId: pedido.lastInsertRowid,
-            numero: numeroPedido,
-            total,
-            pagamento: {
-                qr_code_base64: pagamentoResult.qr_code_base64 || pagamentoResult.qr_code || '',
-                copia_cola: pagamentoResult.copia_cola || '',
-                payment_id: pagamentoResult.payment_id
-            }
-        });
+        res.json({ sucesso: true, pedidoId: pedido.lastInsertRowid, numero: numeroPedido, total, pagamento: { qr_code_base64: pagamentoResult.qr_code_base64 || pagamentoResult.qr_code || '', copia_cola: pagamentoResult.copia_cola || '', payment_id: pagamentoResult.payment_id } });
         
     } catch (error) {
         logger.error('Erro ao finalizar pedido: ' + error.message);
-        res.json({ sucesso: false, mensagem: 'Erro interno. Tente novamente.' });
+        res.json({ sucesso: false, mensagem: 'Erro interno.' });
     }
 });
 
-// ============ INICIAR SISTEMA ============
+// ============ API AGENDAMENTO ============
+app.get('/api/horarios-entrega', async (req, res) => {
+    const AgendamentoService = require('./services/agendamento');
+    const horarios = await AgendamentoService.getHorariosSemana();
+    res.json(horarios);
+});
+
+// ============ INICIAR ============
 async function main() {
     logger.info('🛒 Iniciando Supermercado Telegram...');
     
@@ -234,7 +269,6 @@ async function main() {
         logger.info('✅ Bot Admin online');
     }
     
-    // Tenta conectar WhatsApp
     try {
         await iniciarWhatsApp();
         logger.info('✅ WhatsApp conectado');
