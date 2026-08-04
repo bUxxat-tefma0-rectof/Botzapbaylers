@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="theme-color" content="#27ae60">
     <title>Supermercado</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -12,96 +11,80 @@
 </head>
 <body>
 
-    <!-- ============ HEADER ============ -->
+    <!-- HEADER -->
     <header class="app-header" id="appHeader">
-        <button class="header-btn" onclick="history.back()" id="btnBack" style="display:none">←</button>
+        <button class="header-btn" id="btnBack" style="display:none" onclick="goBack()">←</button>
         <h1 id="headerTitle">🛒 Supermercado</h1>
         <button class="header-btn" onclick="showPage('carrinho')">🛒</button>
     </header>
 
-    <!-- ============ PÁGINA HOME ============ -->
+    <!-- TELA 1: HOME -->
     <div class="page active" id="page-home">
-        <!-- Banner Promocional -->
         <div class="promo-banner" onclick="showPage('ofertas')">
             <div class="promo-title">🔥 Ofertas do Dia</div>
-            <div class="promo-subtitle">Aproveite descontos de até 50%!</div>
+            <div class="promo-subtitle">Descontos de até 50%!</div>
         </div>
-
-        <!-- Busca -->
         <div class="search-container">
             <input type="search" class="search-input" id="searchInput" placeholder="🔍 Buscar produtos...">
         </div>
-
-        <!-- Categorias -->
         <div class="categories-scroll" id="categoriesContainer"></div>
-
-        <!-- Grade de Produtos -->
         <div class="products-grid" id="productsContainer"></div>
-
-        <!-- Loading -->
-        <div id="loadingHome" class="loading" style="display:none;text-align:center;padding:40px">
-            <div class="spinner" style="width:40px;height:40px;border:4px solid #e0e0e0;border-top:4px solid #27ae60;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto"></div>
-            <p style="margin-top:10px;color:#999">Carregando...</p>
-        </div>
-        <style>@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}</style>
     </div>
 
-    <!-- ============ PÁGINA CARRINHO ============ -->
+    <!-- TELA 2: CARRINHO -->
     <div class="page" id="page-carrinho">
         <div id="cartItems"></div>
         <div id="cartTotal"></div>
         <div id="cartEmpty" class="empty-state" style="display:none">
             <div class="empty-icon">🛒</div>
             <div class="empty-title">Carrinho Vazio</div>
-            <div class="empty-text">Adicione produtos para continuar</div>
-            <button class="btn btn-primary" onclick="showPage('home')" style="margin:15px auto;width:80%">🛍️ Ver Produtos</button>
+            <button class="btn btn-primary" onclick="showPage('home')">🛍️ Ver Produtos</button>
         </div>
     </div>
 
-    <!-- ============ PÁGINA CHECKOUT ============ -->
+    <!-- TELA 3: CHECKOUT -->
     <div class="page" id="page-checkout">
         <div id="checkoutContent"></div>
     </div>
 
-    <!-- ============ PÁGINA PEDIDOS ============ -->
+    <!-- TELA 4: PEDIDOS -->
     <div class="page" id="page-pedidos">
         <div id="ordersList"></div>
         <div id="ordersEmpty" class="empty-state" style="display:none">
             <div class="empty-icon">📦</div>
             <div class="empty-title">Nenhum Pedido</div>
-            <div class="empty-text">Seus pedidos aparecerão aqui</div>
-            <button class="btn btn-primary" onclick="showPage('home')" style="margin:15px auto;width:80%">🛍️ Fazer Compras</button>
         </div>
     </div>
 
-    <!-- ============ PÁGINA PERFIL ============ -->
+    <!-- TELA 5: PERFIL -->
     <div class="page" id="page-perfil">
         <div id="profileContent"></div>
     </div>
 
-    <!-- ============ PÁGINA OFERTAS ============ -->
+    <!-- TELA 6: OFERTAS -->
     <div class="page" id="page-ofertas">
         <div class="products-grid" id="ofertasContainer"></div>
     </div>
 
-    <!-- ============ BOTTOM NAVIGATION ============ -->
+    <!-- TELA 7: ENDEREÇOS -->
+    <div class="page" id="page-enderecos">
+        <div id="enderecosContent"></div>
+    </div>
+
+    <!-- NAVEGAÇÃO INFERIOR -->
     <nav class="bottom-nav">
         <button class="nav-item active" data-page="home" onclick="showPage('home')">
-            <span class="icon">🏠</span>
-            <span>Início</span>
+            <span class="icon">🏠</span><span>Início</span>
         </button>
         <button class="nav-item" data-page="carrinho" onclick="showPage('carrinho')">
-            <span class="icon">🛒</span>
-            <span>Carrinho</span>
+            <span class="icon">🛒</span><span>Carrinho</span>
             <span class="badge" id="cartBadge" style="display:none">0</span>
         </button>
         <button class="nav-item" data-page="pedidos" onclick="showPage('pedidos')">
-            <span class="icon">📦</span>
-            <span>Pedidos</span>
+            <span class="icon">📦</span><span>Pedidos</span>
         </button>
         <button class="nav-item" data-page="perfil" onclick="showPage('perfil')">
-            <span class="icon">👤</span>
-            <span>Perfil</span>
+            <span class="icon">👤</span><span>Perfil</span>
         </button>
     </nav>
 
