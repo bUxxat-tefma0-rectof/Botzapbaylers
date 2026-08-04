@@ -5,26 +5,49 @@ const fs = require('fs');
 const logger = require('../utils/logger');
 
 let sock = null;
-let qrCode = null;
+let qrCodeString = null;
+let connectionStatus = 'desconectado';
 
 async function iniciarWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
     
     sock = makeWASocket({
         auth: state,
-        printQRInTerminal: true,
-        logger: pino({ level: 'silent' })
+        printQRInTerminal: false,
+        logger: pino({ level: 'silent' }),
+        browser: ['Supermercado Bot', 'Chrome', '1.0.0']
     });
     
     sock.ev.on('creds.update', saveCreds);
     
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
-        if (qr) { qrCode = qr; console.log('📱 QR Code gerado!'); }
-        if (connection === 'open') { qrCode = null; console.log('✅ WhatsApp conectado!'); }
+        
+        if (qr) {
+            qrCodeString = qr;
+            connectionStatus = 'qr_pendente';
+            console.log('📱 QR Code gerado! Acesse /qr para escanear');
+        }
+        
+        if (connection === 'open') {
+            connectionStatus = 'conectado';
+            qrCodeString = null;
+            console.log('✅ WhatsApp conectado!');
+        }
+        
         if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect?.error instanceof Boom) ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut : true;
-            if (shouldReconnect) setTimeout(() => iniciarWhatsApp(), 5000);
+            connectionStatus = 'desconectado';
+            qrCodeString = null;
+            const shouldReconnect = (lastDisconnect?.error instanceof Boom)
+                ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut
+                : true;
+            
+            if (shouldReconnect) {
+                console.log('🔄 Reconectando WhatsApp...');
+                setTimeout(() => iniciarWhatsApp(), 5000);
+            } else {
+                console.log('❌ Sessão expirada. Apague a pasta auth_info_baileys e reinicie.');
+            }
         }
     });
     
@@ -32,11 +55,15 @@ async function iniciarWhatsApp() {
 }
 
 async function enviarCodigoWhatsApp(numero, codigo) {
-    if (!sock) throw new Error('WhatsApp não conectado');
+    if (!sock || connectionStatus !== 'conectado') {
+        throw new Error('WhatsApp não está conectado');
+    }
     
     try {
         const numeroFormatado = '55' + numero.replace(/\D/g, '') + '@s.whatsapp.net';
-        const mensagem = `🛒 *Supermercado Telegram*\n\n🔐 Seu código de verificação: *${codigo}*\n\n⚠️ Não compartilhe com ninguém!\n⏰ Válido por 10 minutos`;
+        const mensagem = `🛒 *${process.env.NOME_MERCADO || 'Supermercado'}*\n\n` +
+                        `🔐 Seu código de verificação: *${codigo}*\n\n` +
+                        `⚠️ Não compartilhe com ninguém!\n⏰ Válido por 10 minutos`;
         
         await sock.sendMessage(numeroFormatado, { text: mensagem });
         logger.info(`📱 Código ${codigo} enviado para ${numero}`);
@@ -47,7 +74,16 @@ async function enviarCodigoWhatsApp(numero, codigo) {
     }
 }
 
-function getQR() { return qrCode; }
-function getSock() { return sock; }
+function getQR() {
+    return qrCodeString;
+}
 
-module.exports = { iniciarWhatsApp, enviarCodigoWhatsApp, getQR, getSock };
+function getStatus() {
+    return connectionStatus;
+}
+
+function getSock() {
+    return sock;
+}
+
+module.exports = { iniciarWhatsApp, enviarCodigoWhatsApp, getQR, getStatus, getSock };
