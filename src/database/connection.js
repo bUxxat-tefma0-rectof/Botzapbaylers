@@ -25,124 +25,171 @@ async function initDatabase() {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             telegram_id BIGINT UNIQUE NOT NULL,
             tipo TEXT DEFAULT 'PF',
-            nome TEXT, sobrenome TEXT, cpf TEXT UNIQUE, cnpj TEXT UNIQUE,
-            razao_social TEXT, nome_fantasia TEXT, inscricao_estadual TEXT,
-            responsavel TEXT, data_nascimento TEXT, sexo TEXT,
+            nome TEXT, sobrenome TEXT,
+            cpf TEXT UNIQUE, cnpj TEXT UNIQUE,
+            razao_social TEXT, nome_fantasia TEXT,
+            inscricao_estadual TEXT, responsavel TEXT,
+            data_nascimento TEXT, sexo TEXT,
             telefone TEXT, email TEXT, senha TEXT,
-            telefone_verificado INTEGER DEFAULT 0, email_verificado INTEGER DEFAULT 0,
+            telefone_verificado INTEGER DEFAULT 0,
+            email_verificado INTEGER DEFAULT 0,
             codigo_whatsapp TEXT, codigo_email TEXT,
-            bloqueado INTEGER DEFAULT 0, total_gasto REAL DEFAULT 0,
-            pontos_fidelidade INTEGER DEFAULT 0, etapa_cadastro TEXT DEFAULT 'inicio',
+            bloqueado INTEGER DEFAULT 0,
+            total_gasto REAL DEFAULT 0,
+            pontos_fidelidade INTEGER DEFAULT 0,
+            etapa_cadastro TEXT DEFAULT 'inicio',
             data_cadastro DATETIME DEFAULT CURRENT_TIMESTAMP
         );
-        
+
         CREATE TABLE IF NOT EXISTS enderecos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            cliente_id INTEGER NOT NULL, apelido TEXT DEFAULT 'Principal',
-            cep TEXT, logradouro TEXT, numero TEXT, complemento TEXT,
-            referencia TEXT, bairro TEXT, cidade TEXT, estado TEXT,
-            latitude REAL, longitude REAL, principal INTEGER DEFAULT 0,
+            cliente_id INTEGER NOT NULL,
+            apelido TEXT DEFAULT 'Principal',
+            cep TEXT, logradouro TEXT, numero TEXT,
+            complemento TEXT, referencia TEXT,
+            bairro TEXT, cidade TEXT, estado TEXT,
+            latitude REAL, longitude REAL,
+            principal INTEGER DEFAULT 0,
             FOREIGN KEY (cliente_id) REFERENCES clientes(id)
         );
-        
+
         CREATE TABLE IF NOT EXISTS categorias (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nome TEXT NOT NULL, emoji TEXT DEFAULT '📦',
-            ordem INTEGER DEFAULT 0, ativo INTEGER DEFAULT 1
+            nome TEXT NOT NULL,
+            emoji TEXT DEFAULT '📦',
+            ordem INTEGER DEFAULT 0,
+            ativo INTEGER DEFAULT 1
         );
-        
+
         CREATE TABLE IF NOT EXISTS produtos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            categoria_id INTEGER, codigo_barras TEXT, sku TEXT,
-            nome TEXT NOT NULL, marca TEXT, descricao TEXT,
-            info_nutricional TEXT, peso TEXT, unidade TEXT DEFAULT 'un',
+            categoria_id INTEGER,
+            codigo_barras TEXT, sku TEXT,
+            nome TEXT NOT NULL, marca TEXT,
+            descricao TEXT, info_nutricional TEXT,
+            peso TEXT, unidade TEXT DEFAULT 'un',
             validade TEXT, preco REAL NOT NULL,
             preco_promocional REAL, preco_clube REAL,
-            estoque INTEGER DEFAULT 0, foto TEXT, galeria TEXT,
-            destaque INTEGER DEFAULT 0, disponivel INTEGER DEFAULT 1,
+            estoque INTEGER DEFAULT 0,
+            foto TEXT, galeria TEXT,
+            destaque INTEGER DEFAULT 0,
+            disponivel INTEGER DEFAULT 1,
             ordem INTEGER DEFAULT 0,
+            data_cadastro DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (categoria_id) REFERENCES categorias(id)
         );
-        
+
         CREATE TABLE IF NOT EXISTS carrinhos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            cliente_id INTEGER NOT NULL, produto_id INTEGER,
-            quantidade INTEGER DEFAULT 1, comentario TEXT,
+            cliente_id INTEGER NOT NULL,
+            produto_id INTEGER,
+            quantidade INTEGER DEFAULT 1,
+            comentario TEXT,
             FOREIGN KEY (cliente_id) REFERENCES clientes(id),
             FOREIGN KEY (produto_id) REFERENCES produtos(id)
         );
-        
+
         CREATE TABLE IF NOT EXISTS favoritos (
             cliente_id INTEGER, produto_id INTEGER,
             PRIMARY KEY (cliente_id, produto_id)
         );
-        
+
         CREATE TABLE IF NOT EXISTS pedidos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            numero TEXT UNIQUE NOT NULL, cliente_id INTEGER NOT NULL,
-            endereco_id INTEGER, tipo_entrega TEXT DEFAULT 'entrega',
+            numero TEXT UNIQUE NOT NULL,
+            cliente_id INTEGER NOT NULL,
+            endereco_id INTEGER,
+            entregador_id INTEGER,
+            tipo_entrega TEXT DEFAULT 'entrega',
             status TEXT DEFAULT 'recebido',
             subtotal REAL, taxa_entrega REAL DEFAULT 0,
             desconto REAL DEFAULT 0, total REAL,
-            cupom TEXT, comentario TEXT, opcao_falta TEXT DEFAULT 'substituir',
-            pagamento_metodo TEXT, pagamento_id TEXT,
-            pagamento_status TEXT DEFAULT 'pendente', pagamento_qrcode TEXT,
+            cupom TEXT, comentario TEXT,
+            opcao_falta TEXT DEFAULT 'substituir',
+            pagamento_metodo TEXT,
+            pagamento_id TEXT,
+            pagamento_status TEXT DEFAULT 'pendente',
+            pagamento_qrcode TEXT,
             data_pedido DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (cliente_id) REFERENCES clientes(id)
+            data_entrega DATETIME,
+            data_agendada TEXT, horario_agendado TEXT,
+            FOREIGN KEY (cliente_id) REFERENCES clientes(id),
+            FOREIGN KEY (endereco_id) REFERENCES enderecos(id)
         );
-        
+
         CREATE TABLE IF NOT EXISTS itens_pedido (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            pedido_id INTEGER, produto_nome TEXT, marca TEXT,
-            quantidade INTEGER DEFAULT 1, preco_unitario REAL, comentario TEXT,
+            pedido_id INTEGER,
+            produto_nome TEXT, marca TEXT,
+            quantidade INTEGER DEFAULT 1,
+            preco_unitario REAL, comentario TEXT,
             FOREIGN KEY (pedido_id) REFERENCES pedidos(id)
         );
-        
+
         CREATE TABLE IF NOT EXISTS cupons (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            codigo TEXT UNIQUE NOT NULL, tipo TEXT DEFAULT 'percentual',
-            valor REAL NOT NULL, uso_maximo INTEGER DEFAULT 100,
-            uso_atual INTEGER DEFAULT 0, valido_ate DATETIME, ativo INTEGER DEFAULT 1
+            codigo TEXT UNIQUE NOT NULL,
+            tipo TEXT DEFAULT 'percentual',
+            valor REAL NOT NULL,
+            uso_maximo INTEGER DEFAULT 100,
+            uso_atual INTEGER DEFAULT 0,
+            valido_ate DATETIME,
+            ativo INTEGER DEFAULT 1
         );
-        
+
         CREATE TABLE IF NOT EXISTS promocoes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nome TEXT NOT NULL, tipo TEXT, valor REAL,
             categoria_id INTEGER, produto_id INTEGER,
             bairro TEXT, horario_inicio TEXT, horario_fim TEXT,
-            ativo INTEGER DEFAULT 1, data_inicio DATETIME, data_fim DATETIME
+            ativo INTEGER DEFAULT 1,
+            data_inicio DATETIME, data_fim DATETIME
         );
-        
+
         CREATE TABLE IF NOT EXISTS horarios_entrega (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            dia_semana INTEGER, horario TEXT, disponivel INTEGER DEFAULT 1
+            dia_semana INTEGER, horario TEXT,
+            disponivel INTEGER DEFAULT 1
         );
-        
+
         CREATE TABLE IF NOT EXISTS avaliacoes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             pedido_id INTEGER, cliente_id INTEGER,
-            nota INTEGER CHECK(nota >= 1 AND nota <= 5), comentario TEXT,
+            nota INTEGER CHECK(nota >= 1 AND nota <= 5),
+            comentario TEXT,
             data DATETIME DEFAULT CURRENT_TIMESTAMP
         );
-        
-        CREATE TABLE IF NOT EXISTS configs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            chave TEXT UNIQUE NOT NULL, valor TEXT
-        );
-        
-        CREATE TABLE IF NOT EXISTS logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            usuario_id BIGINT, acao TEXT, detalhes TEXT,
-            data DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-        
+
         CREATE TABLE IF NOT EXISTS alertas_disponibilidade (
             cliente_id INTEGER, produto_id INTEGER,
             PRIMARY KEY (cliente_id, produto_id)
         );
+
+        CREATE TABLE IF NOT EXISTS entregadores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL,
+            telefone TEXT NOT NULL,
+            veiculo TEXT DEFAULT 'Moto',
+            placa TEXT,
+            ativo INTEGER DEFAULT 1,
+            data_cadastro DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS configs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chave TEXT UNIQUE NOT NULL,
+            valor TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id BIGINT, acao TEXT,
+            detalhes TEXT,
+            data DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
     `);
     
-    // Insere dados padrão se vazio
+    // Dados padrão
     const cats = db.prepare('SELECT COUNT(*) as t FROM categorias').get();
     if (cats.t === 0) {
         const insertCat = db.prepare("INSERT INTO categorias (nome, emoji, ordem) VALUES (?,?,?)");
