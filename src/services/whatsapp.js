@@ -9,7 +9,6 @@ let qrCodeString = null;
 let connectionStatus = 'desconectado';
 
 async function iniciarWhatsApp() {
-    // LIMPA SESSÃO SE A ENV ESTIVER ATIVA
     if (process.env.LIMPAR_SESSAO === 'true') {
         if (fs.existsSync('auth_info_baileys')) {
             fs.rmSync('auth_info_baileys', { recursive: true, force: true });
@@ -21,9 +20,8 @@ async function iniciarWhatsApp() {
     
     sock = makeWASocket({
         auth: state,
-        printQRInTerminal: false,
-        logger: pino({ level: 'silent' }),
-        browser: ['Supermercado Bot', 'Chrome', '1.0.0']
+        printQRInTerminal: true,
+        logger: pino({ level: 'fatal' })
     });
     
     sock.ev.on('creds.update', saveCreds);
@@ -34,7 +32,8 @@ async function iniciarWhatsApp() {
         if (qr) {
             qrCodeString = qr;
             connectionStatus = 'qr_pendente';
-            console.log('📱 QR Code gerado! Acesse /qr para escanear');
+            console.log('📱 QR Code gerado!');
+            console.log('🔗 Acesse: https://botzapbaylers.onrender.com/qr');
         }
         
         if (connection === 'open') {
@@ -53,6 +52,8 @@ async function iniciarWhatsApp() {
             if (shouldReconnect) {
                 console.log('🔄 Reconectando...');
                 setTimeout(() => iniciarWhatsApp(), 5000);
+            } else {
+                console.log('❌ Sessão expirada.');
             }
         }
     });
@@ -67,10 +68,12 @@ async function enviarCodigoWhatsApp(numero, codigo) {
     const mensagem = `🛒 *${process.env.NOME_MERCADO || 'Supermercado'}*\n\n🔐 Código: *${codigo}*\n\n⚠️ Não compartilhe!\n⏰ Válido por 10 minutos`;
     
     await sock.sendMessage(numeroFormatado, { text: mensagem });
+    logger.info(`📱 Código ${codigo} enviado para ${numero}`);
     return true;
 }
 
 function getQR() { return qrCodeString; }
 function getStatus() { return connectionStatus; }
+function getSock() { return sock; }
 
-module.exports = { iniciarWhatsApp, enviarCodigoWhatsApp, getQR, getStatus };
+module.exports = { iniciarWhatsApp, enviarCodigoWhatsApp, getQR, getStatus, getSock };
