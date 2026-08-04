@@ -9,6 +9,14 @@ let qrCodeString = null;
 let connectionStatus = 'desconectado';
 
 async function iniciarWhatsApp() {
+    // LIMPA SESSÃO SE A ENV ESTIVER ATIVA
+    if (process.env.LIMPAR_SESSAO === 'true') {
+        if (fs.existsSync('auth_info_baileys')) {
+            fs.rmSync('auth_info_baileys', { recursive: true, force: true });
+            console.log('🗑 Sessão antiga removida!');
+        }
+    }
+    
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
     
     sock = makeWASocket({
@@ -23,7 +31,6 @@ async function iniciarWhatsApp() {
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
         
-        // SALVA o QR Code quando ele aparece
         if (qr) {
             qrCodeString = qr;
             connectionStatus = 'qr_pendente';
@@ -44,10 +51,8 @@ async function iniciarWhatsApp() {
                 : true;
             
             if (shouldReconnect) {
-                console.log('🔄 Reconectando WhatsApp...');
+                console.log('🔄 Reconectando...');
                 setTimeout(() => iniciarWhatsApp(), 5000);
-            } else {
-                console.log('❌ Sessão expirada. Apague a pasta auth_info_baileys e reinicie.');
             }
         }
     });
@@ -56,35 +61,16 @@ async function iniciarWhatsApp() {
 }
 
 async function enviarCodigoWhatsApp(numero, codigo) {
-    if (!sock || connectionStatus !== 'conectado') {
-        throw new Error('WhatsApp não está conectado');
-    }
+    if (!sock || connectionStatus !== 'conectado') throw new Error('WhatsApp não está conectado');
     
-    try {
-        const numeroFormatado = '55' + numero.replace(/\D/g, '') + '@s.whatsapp.net';
-        const mensagem = `🛒 *${process.env.NOME_MERCADO || 'Supermercado'}*\n\n` +
-                        `🔐 Seu código de verificação: *${codigo}*\n\n` +
-                        `⚠️ Não compartilhe com ninguém!\n⏰ Válido por 10 minutos`;
-        
-        await sock.sendMessage(numeroFormatado, { text: mensagem });
-        logger.info(`📱 Código ${codigo} enviado para ${numero}`);
-        return true;
-    } catch (error) {
-        logger.error('Erro WhatsApp: ' + error.message);
-        throw new Error('Não foi possível enviar o código');
-    }
+    const numeroFormatado = '55' + numero.replace(/\D/g, '') + '@s.whatsapp.net';
+    const mensagem = `🛒 *${process.env.NOME_MERCADO || 'Supermercado'}*\n\n🔐 Código: *${codigo}*\n\n⚠️ Não compartilhe!\n⏰ Válido por 10 minutos`;
+    
+    await sock.sendMessage(numeroFormatado, { text: mensagem });
+    return true;
 }
 
-function getQR() {
-    return qrCodeString;
-}
+function getQR() { return qrCodeString; }
+function getStatus() { return connectionStatus; }
 
-function getStatus() {
-    return connectionStatus;
-}
-
-function getSock() {
-    return sock;
-}
-
-module.exports = { iniciarWhatsApp, enviarCodigoWhatsApp, getQR, getStatus, getSock };
+module.exports = { iniciarWhatsApp, enviarCodigoWhatsApp, getQR, getStatus };
