@@ -22,7 +22,8 @@ class LojaService {
         
         const produtos = db.prepare(`
             SELECT p.*, 
-                   CASE WHEN p.preco_promocional IS NOT NULL THEN 1 ELSE 0 END as em_promocao
+                   CASE WHEN p.preco_promocional IS NOT NULL THEN 1 ELSE 0 END as em_promocao,
+                   ROUND((p.preco - COALESCE(p.preco_promocional, p.preco)) / p.preco * 100) as desconto_percentual
             FROM produtos p
             WHERE p.categoria_id = ? AND p.disponivel = 1 AND p.estoque > 0
             ORDER BY p.destaque DESC, p.nome ASC
@@ -45,14 +46,12 @@ class LojaService {
         
         if (!produto) return null;
         
-        // Produtos relacionados (mesma categoria)
         const relacionados = db.prepare(`
             SELECT * FROM produtos 
             WHERE categoria_id = ? AND id != ? AND disponivel = 1 AND estoque > 0
             ORDER BY RANDOM() LIMIT 8
         `).all(produto.categoria_id, produtoId);
         
-        // Produtos que clientes também compraram
         const tambemCompraram = db.prepare(`
             SELECT p.*, COUNT(ip2.id) as vezes_comprado
             FROM itens_pedido ip1
@@ -69,7 +68,7 @@ class LojaService {
         return { ...produto, relacionados, tambemCompraram };
     }
     
-    // ============ PESQUISA ============
+    // ============ PESQUISA AVANÇADA ============
     static async pesquisarProdutos(termo, pagina = 1, limite = 30, filtros = {}) {
         const db = getDatabase();
         const offset = (pagina - 1) * limite;
@@ -81,7 +80,7 @@ class LojaService {
         // Filtro por categoria
         if (filtros.categoriaId) {
             whereExtra += ' AND p.categoria_id = ?';
-            params.push(filtros.categoriaId);
+            params.push(parseInt(filtros.categoriaId));
         }
         
         // Filtro por marca
@@ -92,13 +91,13 @@ class LojaService {
         
         // Filtro por preço mínimo
         if (filtros.precoMin) {
-            whereExtra += ' AND (CASE WHEN p.preco_promocional IS NOT NULL THEN p.preco_promocional ELSE p.preco END) >= ?';
+            whereExtra += ' AND COALESCE(p.preco_promocional, p.preco) >= ?';
             params.push(parseFloat(filtros.precoMin));
         }
         
         // Filtro por preço máximo
         if (filtros.precoMax) {
-            whereExtra += ' AND (CASE WHEN p.preco_promocional IS NOT NULL THEN p.preco_promocional ELSE p.preco END) <= ?';
+            whereExtra += ' AND COALESCE(p.preco_promocional, p.preco) <= ?';
             params.push(parseFloat(filtros.precoMax));
         }
         
@@ -107,25 +106,52 @@ class LojaService {
             whereExtra += ' AND p.preco_promocional IS NOT NULL';
         }
         
-        // Filtro apenas disponíveis
-        if (filtros.apenasDisponiveis !== false) {
-            whereExtra += ' AND p.disponivel = 1 AND p.estoque > 0';
+        // Filtro por código de barras
+        if (filtros.codigoBarras) {
+            whereExtra += ' AND p.codigo_barras = ?';
+            params.push(filtros.codigoBarras);
+        }
+        
+        // Filtro por SKU
+        if (filtros.sku) {
+            whereExtra += ' AND p.sku = ?';
+            params.push(filtros.sku);
+        }
+        
+        // Filtro por unidade (kg, un, litro, etc)
+        if (filtros.unidade) {
+            whereExtra += ' AND p.unidade = ?';
+            params.push(filtros.unidade);
+        }
+        
+        // Filtro por destaque
+        if (filtros.apenasDestaques) {
+            whereExtra += ' AND p.destaque = 1';
         }
         
         // Ordenação
         let orderBy = 'ORDER BY p.destaque DESC, p.nome ASC';
         switch (filtros.ordenarPor) {
             case 'menor_preco':
-                orderBy = 'ORDER BY (CASE WHEN p.preco_promocional IS NOT NULL THEN p.preco_promocional ELSE p.preco END) ASC';
+                orderBy = 'ORDER BY COALESCE(p.preco_promocional, p.preco) ASC';
                 break;
             case 'maior_preco':
-                orderBy = 'ORDER BY (CASE WHEN p.preco_promocional IS NOT NULL THEN p.preco_promocional ELSE p.preco END) DESC';
+                orderBy = 'ORDER BY COALESCE(p.preco_promocional, p.preco) DESC';
                 break;
-            case 'nome':
+            case 'nome_az':
                 orderBy = 'ORDER BY p.nome ASC';
+                break;
+            case 'nome_za':
+                orderBy = 'ORDER BY p.nome DESC';
                 break;
             case 'mais_vendidos':
                 orderBy = 'ORDER BY (SELECT COUNT(*) FROM itens_pedido WHERE produto_nome = p.nome) DESC';
+                break;
+            case 'maior_desconto':
+                orderBy = 'ORDER BY ((p.preco - COALESCE(p.preco_promocional, p.preco)) / p.preco) DESC';
+                break;
+            case 'lancamentos':
+                orderBy = 'ORDER BY p.data_cadastro DESC';
                 break;
         }
         
@@ -133,7 +159,8 @@ class LojaService {
             SELECT p.*, c.nome as categoria_nome, c.emoji as categoria_emoji
             FROM produtos p
             LEFT JOIN categorias c ON p.categoria_id = c.id
-            WHERE (p.nome LIKE ? OR p.marca LIKE ? OR p.descricao LIKE ? OR p.codigo_barras LIKE ? OR p.sku LIKE ?)
+            WHERE p.disponivel = 1 AND p.estoque > 0 
+            AND (p.nome LIKE ? OR p.marca LIKE ? OR p.descricao LIKE ? OR p.codigo_barras LIKE ? OR p.sku LIKE ?)
             ${whereExtra}
             ${orderBy}
             LIMIT ? OFFSET ?
@@ -142,11 +169,59 @@ class LojaService {
         const totalParams = [busca, busca, busca, busca, busca, ...params];
         const total = db.prepare(`
             SELECT COUNT(*) as t FROM produtos p
-            WHERE (p.nome LIKE ? OR p.marca LIKE ? OR p.descricao LIKE ? OR p.codigo_barras LIKE ? OR p.sku LIKE ?)
+            WHERE p.disponivel = 1 AND p.estoque > 0 
+            AND (p.nome LIKE ? OR p.marca LIKE ? OR p.descricao LIKE ? OR p.codigo_barras LIKE ? OR p.sku LIKE ?)
             ${whereExtra}
         `).get(...totalParams).t;
         
-        return { produtos, total, pagina, totalPaginas: Math.ceil(total / limite), termo };
+        // Sugestões de busca
+        let sugestoes = [];
+        if (produtos.length === 0 && termo.length >= 3) {
+            sugestoes = db.prepare(`
+                SELECT DISTINCT nome FROM produtos 
+                WHERE disponivel = 1 AND nome LIKE ? 
+                LIMIT 5
+            `).all(`%${termo.substring(0, Math.floor(termo.length/2))}%`).map(r => r.nome);
+        }
+        
+        return {
+            produtos,
+            total,
+            pagina,
+            totalPaginas: Math.ceil(total / limite),
+            termo,
+            sugestoes,
+            filtrosAplicados: filtros
+        };
+    }
+    
+    // ============ MARCAS DISPONÍVEIS ============
+    static async getMarcas() {
+        const db = getDatabase();
+        return db.prepare(`
+            SELECT DISTINCT marca FROM produtos 
+            WHERE marca IS NOT NULL AND marca != '' AND disponivel = 1
+            ORDER BY marca
+        `).all();
+    }
+    
+    // ============ FAIXAS DE PREÇO ============
+    static async getFaixasPreco() {
+        const db = getDatabase();
+        const min = db.prepare('SELECT MIN(COALESCE(preco_promocional, preco)) as v FROM produtos WHERE disponivel = 1').get().v || 0;
+        const max = db.prepare('SELECT MAX(COALESCE(preco_promocional, preco)) as v FROM produtos WHERE disponivel = 1').get().v || 1000;
+        
+        const faixas = [];
+        const step = Math.ceil((max - min) / 5);
+        for (let i = 0; i < 5; i++) {
+            faixas.push({
+                min: min + (i * step),
+                max: min + ((i + 1) * step),
+                label: `${formatarMoeda(min + (i * step))} - ${formatarMoeda(min + ((i + 1) * step))}`
+            });
+        }
+        
+        return faixas;
     }
     
     // ============ PRODUTOS EM DESTAQUE ============
@@ -185,130 +260,10 @@ class LojaService {
         `).all(limite);
     }
     
-    // ============ PRODUTOS POR MARCA ============
-    static async getProdutosPorMarca(marca, limite = 30) {
-        const db = getDatabase();
-        return db.prepare(`
-            SELECT * FROM produtos 
-            WHERE marca LIKE ? AND disponivel = 1 AND estoque > 0
-            ORDER BY nome
-            LIMIT ?
-        `).all(`%${marca}%`, limite);
-    }
-    
-    // ============ LISTAR MARCAS ============
-    static async getMarcas() {
-        const db = getDatabase();
-        return db.prepare(`
-            SELECT DISTINCT marca FROM produtos 
-            WHERE marca IS NOT NULL AND marca != '' AND disponivel = 1
-            ORDER BY marca
-        `).all();
-    }
-    
-    // ============ PRODUTOS COM ESTOQUE BAIXO ============
-    static async getEstoqueBaixo(limite = 10) {
-        const db = getDatabase();
-        return db.prepare(`
-            SELECT * FROM produtos 
-            WHERE disponivel = 1 AND estoque > 0 AND estoque <= 10
-            ORDER BY estoque ASC
-            LIMIT ?
-        `).all(limite);
-    }
-    
-    // ============ CLUBE DE OFERTAS ============
-    static async getClubeOfertas(clienteId, limite = 20) {
-        const db = getDatabase();
-        // Produtos com preço especial para clientes fiéis
-        return db.prepare(`
-            SELECT * FROM produtos 
-            WHERE disponivel = 1 AND estoque > 0 AND preco_clube IS NOT NULL
-            ORDER BY RANDOM()
-            LIMIT ?
-        `).all(limite);
-    }
-    
-    // ============ BANNERS PROMOCIONAIS ============
-    static async getBanners() {
-        const db = getDatabase();
-        return db.prepare(`
-            SELECT p.id, p.nome, p.foto, p.preco_promocional, p.preco,
-                   ((p.preco - p.preco_promocional) / p.preco * 100) as desconto_percentual
-            FROM produtos p
-            WHERE p.disponivel = 1 AND p.estoque > 0 AND p.foto IS NOT NULL AND p.preco_promocional IS NOT NULL
-            ORDER BY desconto_percentual DESC
-            LIMIT 5
-        `).all();
-    }
-    
-    // ============ INFORMAÇÕES NUTRICIONAIS ============
-    static async getInfoNutricional(produtoId) {
-        const db = getDatabase();
-        const produto = db.prepare('SELECT info_nutricional, nome FROM produtos WHERE id = ?').get(produtoId);
-        if (!produto || !produto.info_nutricional) return null;
-        
-        try {
-            return JSON.parse(produto.info_nutricional);
-        } catch (e) {
-            return { texto: produto.info_nutricional };
-        }
-    }
-    
-    // ============ VERIFICAR DISPONIBILIDADE ============
-    static async verificarDisponibilidade(produtoId, cep = null) {
-        const db = getDatabase();
-        const produto = db.prepare('SELECT * FROM produtos WHERE id = ?').get(produtoId);
-        if (!produto) return { disponivel: false, mensagem: 'Produto não encontrado.' };
-        
-        if (!produto.disponivel) return { disponivel: false, mensagem: 'Produto indisponível no momento.' };
-        if (produto.estoque <= 0) return { disponivel: false, mensagem: 'Produto fora de estoque.' };
-        
-        // Verifica se entrega na região (se tiver CEP)
-        if (cep) {
-            const cepLimpo = String(cep).replace(/\D/g, '');
-            // Aqui poderia verificar faixa de CEP atendida
-            if (cepLimpo.length === 8) {
-                return { disponivel: true, estoque: produto.estoque, mensagem: 'Disponível para entrega!' };
-            }
-        }
-        
-        return { disponivel: true, estoque: produto.estoque, mensagem: `${produto.estoque} unidade(s) disponível(is)` };
-    }
-    
-    // ============ COMPARTILHAR PRODUTO ============
-    static async getLinkCompartilhamento(produtoId) {
-        const db = getDatabase();
-        const produto = db.prepare('SELECT nome, preco, preco_promocional FROM produtos WHERE id = ?').get(produtoId);
-        if (!produto) return null;
-        
-        const preco = produto.preco_promocional || produto.preco;
-        const texto = `🛒 ${produto.nome} - ${formatarMoeda(preco)}\n\nPeça no ${process.env.NOME_MERCADO || 'Supermercado Telegram'}!`;
-        
-        return {
-            texto,
-            url: `https://t.me/${process.env.BOT_USERNAME || 'supermercado_bot'}?start=produto_${produtoId}`
-        };
-    }
-    
-    // ============ HISTÓRICO DE PREÇOS ============
-    static async getHistoricoPrecos(produtoId) {
-        const db = getDatabase();
-        return db.prepare(`
-            SELECT ip.preco_unitario, p.data_pedido
-            FROM itens_pedido ip
-            JOIN pedidos p ON ip.pedido_id = p.id
-            WHERE ip.produto_nome = (SELECT nome FROM produtos WHERE id = ?)
-            ORDER BY p.data_pedido DESC
-            LIMIT 10
-        `).all(produtoId);
-    }
-    
     // ============ SUGESTÕES PERSONALIZADAS ============
     static async getSugestoesPersonalizadas(clienteId, limite = 10) {
         const db = getDatabase();
         
-        // Baseado no histórico de compras
         const categoriasCompradas = db.prepare(`
             SELECT DISTINCT p.categoria_id
             FROM itens_pedido ip
@@ -333,38 +288,36 @@ class LojaService {
         `).all(...catIds, limite);
     }
     
-    // ============ AVALIAÇÕES DO PRODUTO ============
-    static async getAvaliacoesProduto(produtoId) {
+    // ============ COMPARTILHAR PRODUTO ============
+    static async getLinkCompartilhamento(produtoId) {
         const db = getDatabase();
-        const produto = db.prepare('SELECT nome FROM produtos WHERE id = ?').get(produtoId);
-        if (!produto) return [];
+        const produto = db.prepare('SELECT nome, preco, preco_promocional FROM produtos WHERE id = ?').get(produtoId);
+        if (!produto) return null;
         
-        return db.prepare(`
-            SELECT a.nota, a.comentario, a.data, c.nome
-            FROM avaliacoes a
-            JOIN pedidos p ON a.pedido_id = p.id
-            JOIN itens_pedido ip ON ip.pedido_id = p.id
-            JOIN clientes c ON a.cliente_id = c.id
-            WHERE ip.produto_nome = ?
-            ORDER BY a.data DESC
-            LIMIT 20
-        `).all(produto.nome);
+        const preco = produto.preco_promocional || produto.preco;
+        return {
+            texto: `🛒 ${produto.nome} - ${formatarMoeda(preco)}\n\nCompre no ${process.env.NOME_MERCADO || 'Supermercado'}!`,
+            url: `https://t.me/seubot?start=produto_${produtoId}`
+        };
     }
     
-    // ============ NOTIFICAR QUANDO DISPONÍVEL ============
-    static async notificarDisponibilidade(userId, produtoId) {
-        const db = getDatabase();
-        const cliente = db.prepare('SELECT id FROM clientes WHERE telegram_id = ?').get(userId);
-        if (!cliente) return { sucesso: false };
-        
-        db.prepare('INSERT OR IGNORE INTO alertas_disponibilidade (cliente_id, produto_id) VALUES (?, ?)').run(cliente.id, produtoId);
-        return { sucesso: true, mensagem: 'Você será notificado quando o produto voltar ao estoque!' };
-    }
-    
-    // ============ CÓDIGO DE BARRAS ============
+    // ============ BUSCAR POR CÓDIGO DE BARRAS ============
     static async buscarPorCodigoBarras(codigo) {
         const db = getDatabase();
         return db.prepare('SELECT * FROM produtos WHERE codigo_barras = ? AND disponivel = 1').get(codigo);
+    }
+    
+    // ============ HISTÓRICO DE PREÇOS ============
+    static async getHistoricoPrecos(produtoId) {
+        const db = getDatabase();
+        return db.prepare(`
+            SELECT ip.preco_unitario, p.data_pedido
+            FROM itens_pedido ip
+            JOIN pedidos p ON ip.pedido_id = p.id
+            WHERE ip.produto_nome = (SELECT nome FROM produtos WHERE id = ?)
+            ORDER BY p.data_pedido DESC
+            LIMIT 10
+        `).all(produtoId);
     }
 }
 
